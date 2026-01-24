@@ -2,12 +2,9 @@ import sys
 import msvcrt
 from prompt_toolkit import prompt
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.formatted_text import ANSI
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-
-console = Console()
+from prompt_toolkit.formatted_text import ANSI, HTML
+from dialogs import show_message
+from styles import get_ttyt_style
 
 class GoBackException(Exception):
     pass
@@ -15,6 +12,7 @@ class GoBackException(Exception):
 def exit_handler(sig, frame):
     print("\n\033[31mExiting...\033[0m")
     sys.exit(0)
+
 
 def safe_input(text: str) -> str:
     kb = KeyBindings()
@@ -66,20 +64,26 @@ def is_esc_pressed():
     return False
 
 def show_help():
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_row("[cyan]/api[/cyan]", "Set/update API keys")
-    table.add_row("[cyan]/models[/cyan]", "Switch AI provider/model")
-    table.add_row("[cyan]/uninstall[/cyan]", "Remove configuration")
-    table.add_row("[cyan]/help[/cyan]", "Show this help")
-    table.add_row("[cyan]/cmd[/cyan]", "Run command directly")
+    help_text = HTML(
+        '<bold>Commands</bold>\n'
+        '<style color="#89b4fa">/api</style>       Set/update API keys\n'
+        '<style color="#89b4fa">/models</style>    Switch AI provider/model\n'
+        '<style color="#89b4fa">/uninstall</style> Remove configuration\n'
+        '<style color="#89b4fa">/help</style>      Show this help\n'
+        '<style color="#89b4fa">/cmd</style>       Run command directly\n'
+        '\n'
+        '<bold>Command Safety</bold>\n'
+        '<style color="green">[SAFE]</style>    Read-only commands auto-execute\n'
+        '<style color="yellow">[CAUTION]</style> Confirm before execution\n'
+        '<style color="red">[DANGER]</style>  Destructive commands blocked'
+    )
+    
+    show_message(
+        title="Help",
+        text=help_text,
+        style=get_ttyt_style()
+    )
 
-    safety_table = Table(show_header=False, box=None, padding=(0, 2))
-    safety_table.add_row("[green][SAFE][/green]", "Read-only commands auto-execute")
-    safety_table.add_row("[yellow][CAUTION][/yellow]", "Confirm before execution")
-    safety_table.add_row("[red][DANGER][/red]", "Destructive commands blocked")
-
-    console.print(Panel(table, title="Commands", border_style="blue", expand=False))
-    console.print(Panel(safety_table, title="Command Safety", border_style="blue", expand=False))
 
 def is_natural_language(text: str) -> bool:
     if text.startswith("/"):

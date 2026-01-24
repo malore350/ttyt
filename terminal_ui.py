@@ -3,6 +3,7 @@ import sys
 from datetime import datetime
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style
+from styles import get_ttyt_style
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.completion import WordCompleter
@@ -19,32 +20,9 @@ COMMANDS = {
 
 class TerminalUI:
     def __init__(self):
-        self.style = self._create_style()
+        self.style = get_ttyt_style()
         self.session = self._create_session()
         self.current_provider = None
-
-    def _create_style(self):
-        return Style.from_dict({
-            'prefix': '#5af78e bold',
-            'path': '#6c7086 italic',
-            'separator': '#45475a',
-            'input-symbol': '#89b4fa bold',
-            
-            'toolbar': 'bg:#1e1e2e #cdd6f4',
-            'toolbar_label': '#bac2de',
-            'toolbar_value': '#fab387 bold',
-            'toolbar_dim': '#585b70',
-            
-            'welcome_title': '#89b4fa bold',
-            'welcome_text': '#cdd6f4',
-
-            'completion-menu.completion': 'bg:#313244 #cdd6f4',
-            'completion-menu.completion.current': 'bg:#45475a #89b4fa bold',
-            'completion-menu.scrollbar.background': 'bg:#313244',
-            'completion-menu.scrollbar.button': 'bg:#585b70',
-            'completion-menu.meta.completion': 'bg:#1e1e2e #6c7086 italic',
-            'completion-menu.meta.completion.current': 'bg:#1e1e2e #bac2de italic',
-        })
 
     def _create_session(self):
         completer = WordCompleter(
@@ -158,7 +136,7 @@ class TerminalUI:
     def print_welcome(self, provider):
         print_formatted_text(HTML(
             f'\n<welcome_title>ttyt</welcome_title> <welcome_text>terminal assistant</welcome_text>\n'
-            f'<path>Talk to your terminal. Type a command or a question.</path>\n'
+            f'<path>Talk to your terminal. Type a command or a question. Hit /help for commands.</path>\n'
         ), style=self.style)
 
     def print_message(self, text, style_class=''):

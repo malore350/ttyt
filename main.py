@@ -32,7 +32,6 @@ def main():
 
     ui = TerminalUI()
     ui.print_welcome(provider)
-    show_help()
 
     while True:
         try:

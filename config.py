@@ -1,4 +1,6 @@
 import os
+from dialogs import show_radio_list, show_input
+from styles import get_ttyt_style
 from providers import GeminiProvider, ZAIProvider, OpenRouterProvider
 from utils import safe_input
 
@@ -35,18 +37,19 @@ def save_config(config: dict):
         f.write("\n".join(lines) + "\n")
 
 def setup_api_keys():
-    print("\033[36m\nManage API Keys:\033[0m")
-    print("1. Gemini (Google)")
-    print("2. Z.ai (GLM)")
-    print("3. OpenRouter (GLM-4.5-Air Free)")
-    choice = safe_input("\033[33mSelect provider to set key [1/2/3]: \033[0m")
+    current = os.getenv("AI_PROVIDER")
+    provider_choice = show_radio_list(
+        title="Manage API Keys",
+        values=[
+            ("gemini", "Gemini (Google)"),
+            ("zai", "Z.ai (GLM)"),
+            ("openrouter", "OpenRouter (GLM-4.5-Air Free)")
+        ],
+        default=current,
+        style=get_ttyt_style()
+    )
     
-    provider_map = {"1": "gemini", "2": "zai", "3": "openrouter"}
-    provider_name = provider_map.get(choice)
-    
-    if not provider_name:
-        if choice:
-            print("Invalid choice.")
+    if not provider_choice:
         return False
 
     env_key_map = {
@@ -60,40 +63,43 @@ def setup_api_keys():
         "openrouter": "https://openrouter.ai/keys"
     }
     
-    env_key = env_key_map[provider_name]
-    url = url_map[provider_name]
+    env_key = env_key_map[provider_choice]
+    url = url_map[provider_choice]
     
-    print(f"\n\033[36mGet your key at: {url}\033[0m\n")
-    api_key = safe_input(f"\033[33mEnter your {provider_name.upper()} API key:\033[0m ")
+    api_key = show_input(
+        title=f"Set {provider_choice.upper()} API Key",
+        text=f"Get your key at: {url}\n\nEnter API Key:",
+        password=True,
+        style=get_ttyt_style()
+    )
     
     if api_key:
         save_config({env_key: api_key})
         os.environ[env_key] = api_key
-        print(f"\033[32m[OK] {provider_name.upper()} API key saved!\033[0m")
         return True
     return False
 
 def select_model():
-    print("\033[36m\nSwitch AI Provider:\033[0m")
-    print("1. Gemini (Google)")
-    print("2. Z.ai (GLM)")
-    print("3. OpenRouter (GLM-4.5-Air Free)")
-    choice = safe_input("\033[33mChoice [1/2/3]: \033[0m")
+    current = os.getenv("AI_PROVIDER", "gemini")
+    result = show_radio_list(
+        title="Switch AI Provider",
+        values=[
+            ("gemini", "Gemini (Google)"),
+            ("zai", "Z.ai (GLM)"),
+            ("openrouter", "OpenRouter (GLM-4.5-Air Free)"),
+        ],
+        default=current,
+        style=get_ttyt_style()
+    )
     
-    provider_map = {"1": "gemini", "2": "zai", "3": "openrouter"}
-    provider_name = provider_map.get(choice)
-    
-    if not provider_name:
-        if choice:
-            print("Invalid choice.")
+    if not result:
         return False
     
-    save_config({"AI_PROVIDER": provider_name})
-    os.environ["AI_PROVIDER"] = provider_name
+    save_config({"AI_PROVIDER": result})
+    os.environ["AI_PROVIDER"] = result
     return True
 
 def setup_provider():
-    print("\033[36m\nInitial Setup:\033[0m")
     if not select_model():
         return False
     
