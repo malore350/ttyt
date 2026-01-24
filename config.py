@@ -41,9 +41,9 @@ def setup_api_keys():
     provider_choice = show_radio_list(
         title="Manage API Keys",
         values=[
-            ("gemini", "Gemini (Google)"),
+            ("gemini", "Google (Gemini)"),
             ("zai", "Z.ai (GLM)"),
-            ("openrouter", "OpenRouter (GLM-4.5-Air Free)")
+            ("openrouter", "OpenRouter (Nemotron-3-nano)")
         ],
         default=current,
         style=get_ttyt_style()
@@ -80,23 +80,73 @@ def setup_api_keys():
     return False
 
 def select_model():
-    current = os.getenv("AI_PROVIDER", "gemini")
-    result = show_radio_list(
+    current_provider = os.getenv("AI_PROVIDER", "gemini")
+    provider = show_radio_list(
         title="Switch AI Provider",
         values=[
-            ("gemini", "Gemini (Google)"),
+            ("gemini", "Google (Gemini)"),
             ("zai", "Z.ai (GLM)"),
-            ("openrouter", "OpenRouter (GLM-4.5-Air Free)"),
+            ("openrouter", "OpenRouter (Nemotron-3-nano)"),
         ],
-        default=current,
+        default=current_provider,
         style=get_ttyt_style()
     )
     
-    if not result:
+    if not provider:
         return False
-    
-    save_config({"AI_PROVIDER": result})
-    os.environ["AI_PROVIDER"] = result
+
+    gemini_model = None
+    zai_model = None
+    if provider == "gemini" and current_provider == "gemini":
+        gemini_model = os.getenv("GEMINI_MODEL")
+    if provider == "zai" and current_provider == "zai":
+        zai_model = os.getenv("ZAI_MODEL")
+    if provider == "gemini":
+        gemini_values = [
+            ("__unset__", "Select a model..."),
+            ("gemini-3-flash-preview", "gemini-3-flash-preview"),
+            ("gemini-2.5-flash", "gemini-2.5-flash"),
+            ("gemini-2.5-flash-lite", "gemini-2.5-flash-lite"),
+        ]
+        model_choice = show_radio_list(
+            title="Select Gemini Model",
+            values=gemini_values,
+            default=gemini_model or ("__unset__" if current_provider != "gemini" else None),
+            style=get_ttyt_style()
+        )
+        if not model_choice or model_choice == "__unset__":
+            return False
+        gemini_model = model_choice
+    elif provider == "zai":
+        zai_values = [
+            ("__unset__", "Select a model..."),
+            ("glm-4.7", "glm-4.7"),
+            ("glm-4.7-flashx", "glm-4.7-flashx"),
+            ("glm-4.7-flash", "glm-4.7-flash"),
+            ("glm-4.6", "glm-4.6"),
+        ]
+        model_choice = show_radio_list(
+            title="Select Z.ai Model",
+            values=zai_values,
+            default=zai_model or ("__unset__" if current_provider != "zai" else None),
+            style=get_ttyt_style()
+        )
+        if not model_choice or model_choice == "__unset__":
+            return False
+        zai_model = model_choice
+
+    config_update = {"AI_PROVIDER": provider}
+    if gemini_model:
+        config_update["GEMINI_MODEL"] = gemini_model
+    if zai_model:
+        config_update["ZAI_MODEL"] = zai_model
+
+    save_config(config_update)
+    os.environ["AI_PROVIDER"] = provider
+    if gemini_model:
+        os.environ["GEMINI_MODEL"] = gemini_model
+    if zai_model:
+        os.environ["ZAI_MODEL"] = zai_model
     return True
 
 def setup_provider():
@@ -127,9 +177,9 @@ def get_current_provider():
     
     try:
         if provider_name == "gemini":
-            return GeminiProvider(api_key)
+            return GeminiProvider(api_key, os.getenv("GEMINI_MODEL"))
         elif provider_name == "zai":
-            return ZAIProvider(api_key)
+            return ZAIProvider(api_key, os.getenv("ZAI_MODEL"))
         elif provider_name == "openrouter":
             return OpenRouterProvider(api_key)
     except Exception as e:

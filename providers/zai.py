@@ -1,8 +1,10 @@
+import os
+from typing import Optional
 from providers.base import AIProvider
 
 class ZAIProvider(AIProvider):
-    def __init__(self, api_key: str):
-        self.model_name = "glm-4.7"
+    def __init__(self, api_key: str, model_name: Optional[str] = None):
+        self.model_name = model_name or os.getenv("ZAI_MODEL") or "glm-4.7"
         try:
             from zai import ZaiClient
             self.client = ZaiClient(api_key=api_key)

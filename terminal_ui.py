@@ -101,7 +101,8 @@ class TerminalUI:
         if not self.current_provider:
              return HTML('<toolbar> <style color="#f38ba8">⚠ No Provider Selected</style> </toolbar>')
         
-        provider_name = os.getenv('AI_PROVIDER', 'Unknown').upper()
+        provider_key = os.getenv('AI_PROVIDER', 'Unknown')
+        provider_name = "GOOGLE" if provider_key == "gemini" else provider_key.upper()
         model_name = getattr(self.current_provider, 'model_name', 'Unknown')
         
         return HTML(
