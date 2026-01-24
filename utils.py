@@ -3,6 +3,11 @@ import msvcrt
 from prompt_toolkit import prompt
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.formatted_text import ANSI
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+
+console = Console()
 
 class GoBackException(Exception):
     pass
@@ -32,16 +37,20 @@ def is_esc_pressed():
     return False
 
 def show_help():
-    print("\033[36m/api\033[0m       - Set/update API keys")
-    print("\033[36m/models\033[0m    - Switch AI provider/model")
-    print("\033[36m/uninstall\033[0m - Remove configuration")
-    print("\033[36m/help\033[0m      - Show this help")
-    print("\033[36m/cmd\033[0m       - Run cmd directly")
-    print("\033[36m\nCommand Safety:\033[0m")
-    print("\033[32m[SAFE]\033[0m      - Read-only commands auto-execute")
-    print("\033[33m[CAUTION]\033[0m   - Confirm before execution")
-    print("\033[31m[DANGER]\033[0m    - Destructive commands blocked")
-    print()
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_row("[cyan]/api[/cyan]", "Set/update API keys")
+    table.add_row("[cyan]/models[/cyan]", "Switch AI provider/model")
+    table.add_row("[cyan]/uninstall[/cyan]", "Remove configuration")
+    table.add_row("[cyan]/help[/cyan]", "Show this help")
+    table.add_row("[cyan]/cmd[/cyan]", "Run command directly")
+
+    safety_table = Table(show_header=False, box=None, padding=(0, 2))
+    safety_table.add_row("[green][SAFE][/green]", "Read-only commands auto-execute")
+    safety_table.add_row("[yellow][CAUTION][/yellow]", "Confirm before execution")
+    safety_table.add_row("[red][DANGER][/red]", "Destructive commands blocked")
+
+    console.print(Panel(table, title="Commands", border_style="blue", expand=False))
+    console.print(Panel(safety_table, title="Command Safety", border_style="blue", expand=False))
 
 def is_natural_language(text: str) -> bool:
     if text.startswith("/"):
