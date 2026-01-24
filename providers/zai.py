@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Any, Optional, cast
 from providers.base import AIProvider
 
 class ZAIProvider(AIProvider):
@@ -29,11 +29,12 @@ Rules:
 - For killing processes, use 'taskkill //F //PID <pid>'.
 - Use forward slashes (/) for paths.
 - User request: {user_input}"""
-        response = self.client.chat.completions.create(
+        response = cast(Any, self.client.chat.completions.create(
             model=self.model_name,
             messages=[{"role": "user", "content": prompt}]
-        )
-        return response.choices[0].message.content.strip()
+        ))
+        content = response.choices[0].message.content
+        return (content or "").strip()
 
     def generate_answer(self, user_input: str, cwd: str, history_context: str) -> str:
         prompt = f"""You are a helpful assistant. Answer the user's question directly and concisely.
@@ -47,8 +48,9 @@ Rules:
 - No shell commands unless explicitly asked
 - No markdown fences
 - User question: {user_input}"""
-        response = self.client.chat.completions.create(
+        response = cast(Any, self.client.chat.completions.create(
             model=self.model_name,
             messages=[{"role": "user", "content": prompt}]
-        )
-        return response.choices[0].message.content.strip()
+        ))
+        content = response.choices[0].message.content
+        return (content or "").strip()

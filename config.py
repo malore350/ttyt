@@ -16,7 +16,7 @@ def load_env():
                     key, value = line.split("=", 1)
                     os.environ[key] = value
 
-def save_config(config: dict):
+def save_config(config: dict[str, str]):
     lines = []
     if os.path.exists(ENV_PATH):
         with open(ENV_PATH, "r") as f:
@@ -155,9 +155,13 @@ def setup_provider():
         return False
     
     provider_name = os.getenv("AI_PROVIDER")
+    if provider_name is None:
+        return False
     env_key_map = {"gemini": "GEMINI_API_KEY", "zai": "ZAI_API_KEY", "openrouter": "OPENROUTER_API_KEY"}
     env_key = env_key_map.get(provider_name)
-    
+    if not env_key:
+        return False
+
     if not os.getenv(env_key):
         return setup_api_keys()
     return True
@@ -171,7 +175,8 @@ def get_current_provider():
         "openrouter": "OPENROUTER_API_KEY"
     }
     
-    api_key = os.getenv(key_map.get(provider_name, "GEMINI_API_KEY"))
+    key_name = key_map.get(provider_name, "GEMINI_API_KEY")
+    api_key = os.getenv(key_name)
     
     if not api_key:
         return None

@@ -1,8 +1,8 @@
 import os
-import sys
 import subprocess
 import threading
 import time
+from typing import Any
 from rich.console import Console
 from rich.panel import Panel
 from rich.live import Live
@@ -14,12 +14,12 @@ from utils import safe_input, is_esc_pressed, GoBackException
 console = Console()
 
 def interruptible_generate(provider, user_input, cwd, history_context):
-    result = {"command": None, "error": None}
+    result: dict[str, Any] = {"command": None, "error": None}
     def target():
         try:
             result["command"] = provider.generate_command(user_input, cwd, history_context)
         except Exception as e:
-            result["error"] = e
+            result["error"] = str(e)
 
     thread = threading.Thread(target=target)
     thread.daemon = True
@@ -34,19 +34,19 @@ def interruptible_generate(provider, user_input, cwd, history_context):
         
         if result["error"]:
             live.update(Text(f"Error: {result['error']}", style="red"))
-            raise result["error"]
+            raise Exception(result["error"])
         
         live.update(Text(""))
     
-    return result["command"]
+    return result["command"] or ""
 
 def interruptible_answer(provider, user_input, cwd, history_context):
-    result = {"answer": None, "error": None}
+    result: dict[str, Any] = {"answer": None, "error": None}
     def target():
         try:
             result["answer"] = provider.generate_answer(user_input, cwd, history_context)
         except Exception as e:
-            result["error"] = e
+            result["error"] = str(e)
 
     thread = threading.Thread(target=target)
     thread.daemon = True
@@ -61,11 +61,11 @@ def interruptible_answer(provider, user_input, cwd, history_context):
 
         if result["error"]:
             live.update(Text(f"Error: {result['error']}", style="red"))
-            raise result["error"]
+            raise Exception(result["error"])
 
         live.update(Text(""))
 
-    return result["answer"]
+    return result["answer"] or ""
 
 def get_command(provider, user_input: str, cwd: str) -> str:
     history_context = format_history()
@@ -164,7 +164,7 @@ def execute_command_with_safety(command: str) -> bool:
             return False
 
     if risk == CommandRisk.SAFE:
-        console.print(f"[cyan]\[SAFE] {description}[/cyan]")
+        console.print(f"[cyan][SAFE] {description}[/cyan]")
 
     cmd_parts = command.strip().split()
     if cmd_parts and cmd_parts[0] == "cd":

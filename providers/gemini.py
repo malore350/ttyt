@@ -33,7 +33,7 @@ Rules:
             model=self.model_name,
             contents=prompt
         )
-        return response.text.strip()
+        return (response.text or "").strip()
 
     def generate_answer(self, user_input: str, cwd: str, history_context: str) -> str:
         prompt = f"""You are a helpful assistant. Answer the user's question directly and concisely.
@@ -51,4 +51,4 @@ Rules:
             model=self.model_name,
             contents=prompt
         )
-        return response.text.strip()
+        return (response.text or "").strip()
