@@ -20,8 +20,11 @@ def main():
 
     provider = get_current_provider()
     if not provider:
-        setup_provider()
-        provider = get_current_provider()
+        try:
+            setup_provider()
+            provider = get_current_provider()
+        except GoBackException:
+            print("\033[33m(Exited)\033[0m")
 
     if not provider:
         print("\033[31mNo provider configured. Exiting.\033[0m")
@@ -79,7 +82,7 @@ def main():
                 execute_command_with_safety(command)
             
         except GoBackException:
-            print()
+            print("\033[33m(Exited)\033[0m")
             continue
         except (EOFError, InterruptedError, KeyboardInterrupt):
             print("\n\033[31mExiting...\033[0m")

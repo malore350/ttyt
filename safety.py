@@ -20,6 +20,11 @@ class CommandSafety:
         "python", "python3", "node", "java", "go", "rustc", "ruby", "perl",
         "awk", "sed", "bc", "expr",
         "cd", "dir", "type",
+        "diff", "basename", "dirname", "realpath", "file", "stat",
+        "md5sum", "sha1sum", "sha256sum", "base64", "strings",
+        "uname", "history", "echo", "clear", "man", "help",
+        "tasklist", "ipconfig", "systeminfo", "netstat", "findstr", "attrib", "where",
+        "ll", "la", "l",
     }
 
     # Git commands that are always safe
@@ -27,6 +32,8 @@ class CommandSafety:
         "git status", "git log", "git branch", "git show", "git diff", "git remote",
         "git config --get", "git describe", "git rev-parse", "git tag", "git blame",
         "git log --oneline", "git log --graph", "git branch -a", "git reflog",
+        "git version", "git help", "git ls-files", "git ls-tree", "git branch --list",
+        "git remote -v", "git stash list", "git shortlog", "git cat-file",
     }
 
     # Danger commands - destructive operations
@@ -44,7 +51,6 @@ class CommandSafety:
     CAUTION_PATTERNS = [
         r'\|\|',
         r'&&',
-        r'\|',
         r';',
         r'&\s*$',
         r'>',
@@ -90,6 +96,42 @@ class CommandSafety:
         for pattern in cls.CAUTION_PATTERNS:
             if re.search(pattern, command):
                 return CommandRisk.CAUTION
+
+        if '|' in command:
+            parts = command.split('|')
+            all_safe = True
+            for part in parts:
+                part = part.strip()
+                if not part:
+                    all_safe = False
+                    break
+                
+                part_lower = part.lower()
+                part_is_safe = False
+                
+                for safe_cmd in cls.SAFE_COMMANDS:
+                    if part_lower.startswith(safe_cmd + " ") or part_lower == safe_cmd:
+                        if safe_cmd == "git":
+                            git_risk = cls._classify_git_command(part)
+                            if git_risk == CommandRisk.SAFE:
+                                part_is_safe = True
+                        else:
+                            part_is_safe = True
+                        break
+                
+                if not part_is_safe:
+                    for safe_git in cls.SAFE_GIT_COMMANDS:
+                        if part_lower.startswith(safe_git):
+                            part_is_safe = True
+                            break
+                
+                if not part_is_safe:
+                    all_safe = False
+                    break
+            
+            if all_safe:
+                return CommandRisk.SAFE
+            return CommandRisk.CAUTION
 
         # Check for package managers
         first_token = cmd_lower.split()[0] if cmd_lower.split() else ""

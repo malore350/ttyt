@@ -6,7 +6,8 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.completion import WordCompleter
-from prompt_toolkit.filters import has_completions
+from prompt_toolkit.filters import Condition, has_completions
+from prompt_toolkit.application import get_app
 from prompt_toolkit.shortcuts import print_formatted_text
 
 COMMANDS = {
@@ -52,6 +53,11 @@ class TerminalUI:
             ignore_case=True, 
             sentence=True
         )
+
+        @Condition
+        def is_command():
+            return get_app().current_buffer.text.startswith('/')
+
         kb = KeyBindings()
 
         @kb.add('enter', filter=has_completions)
@@ -73,14 +79,14 @@ class TerminalUI:
         @kb.add('backspace')
         @kb.add('c-h')
         def _(event):
-            event.current_buffer.delete_before_cursor(count=1)
-            if event.current_buffer.completer:
-                event.current_buffer.start_completion(select_first=False)
+            buffer = event.current_buffer
+            buffer.delete_before_cursor(count=1)
+            if buffer.completer and buffer.text.startswith('/'):
+                buffer.start_completion(select_first=False)
 
         return PromptSession(
-
             completer=completer,
-            complete_while_typing=True,
+            complete_while_typing=is_command,
             key_bindings=kb,
             bottom_toolbar=self._get_bottom_toolbar,
             refresh_interval=0.5
