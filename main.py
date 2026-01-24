@@ -53,6 +53,11 @@ def main():
                         ui.print_message(f"Switched to: {os.getenv('AI_PROVIDER')} ({provider.model_name})", "path")
                 continue
             
+            if user_input == "/new":
+                os.system('cls' if os.name == 'nt' else 'clear')
+                ui.print_welcome(provider)
+                continue
+
             if user_input == "/uninstall":
                 confirm = safe_input("\033[33mRemove configuration? [y/N]\033[0m ")
                 if confirm.lower() == "y":
