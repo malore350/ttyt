@@ -77,10 +77,36 @@ class TerminalUI:
             event.current_buffer.reset()
 
         @kb.add('backspace')
-        @kb.add('c-h')
         def _(event):
             buffer = event.current_buffer
-            buffer.delete_before_cursor(count=1)
+            # Check if Ctrl is pressed (Windows workaround for Ctrl+Backspace)
+            is_ctrl = False
+            try:
+                import ctypes
+                # 0x11 is VK_CONTROL
+                is_ctrl = (ctypes.windll.user32.GetAsyncKeyState(0x11) & 0x8000) != 0
+            except Exception:
+                pass
+
+            if is_ctrl:
+                # Ctrl+Backspace behavior: delete word
+                pos = buffer.document.find_start_of_previous_word(count=1)
+                if pos:
+                    buffer.delete_before_cursor(count=-pos)
+            else:
+                # Normal Backspace behavior: delete char
+                buffer.delete_before_cursor(count=1)
+                
+            if buffer.completer and buffer.text.startswith('/'):
+                buffer.start_completion(select_first=False)
+
+        @kb.add('c-w')
+        @kb.add('escape', 'backspace')
+        def _(event):
+            buffer = event.current_buffer
+            pos = buffer.document.find_start_of_previous_word(count=1)
+            if pos:
+                buffer.delete_before_cursor(count=-pos)
             if buffer.completer and buffer.text.startswith('/'):
                 buffer.start_completion(select_first=False)
 

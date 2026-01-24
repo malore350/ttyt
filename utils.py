@@ -22,6 +22,35 @@ def safe_input(text: str) -> str:
     @kb.add('escape', eager=True)
     def _(event):
         event.app.exit(exception=GoBackException)
+        
+    @kb.add('backspace')
+    def _(event):
+        buffer = event.current_buffer
+        # Check if Ctrl is pressed (Windows workaround for Ctrl+Backspace)
+        is_ctrl = False
+        try:
+            import ctypes
+            # 0x11 is VK_CONTROL
+            is_ctrl = (ctypes.windll.user32.GetAsyncKeyState(0x11) & 0x8000) != 0
+        except Exception:
+            pass
+
+        if is_ctrl:
+            # Ctrl+Backspace behavior
+            pos = buffer.document.find_start_of_previous_word(count=1)
+            if pos:
+                buffer.delete_before_cursor(count=-pos)
+        else:
+            # Normal Backspace behavior
+            buffer.delete_before_cursor(count=1)
+
+    @kb.add('c-w')
+    @kb.add('escape', 'backspace')
+    def _(event):
+        buffer = event.current_buffer
+        pos = buffer.document.find_start_of_previous_word(count=1)
+        if pos:
+            buffer.delete_before_cursor(count=-pos)
 
     try:
         return prompt(ANSI(text), key_bindings=kb).strip()
