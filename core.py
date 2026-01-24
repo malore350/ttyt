@@ -1,15 +1,100 @@
 import os
 import sys
 import subprocess
+import threading
+import time
 from safety import CommandSafety, CommandRisk
 from history import add_to_history, format_history
+from utils import safe_input, is_esc_pressed, GoBackException
+
+def interruptible_generate(provider, user_input, cwd, history_context):
+    result = {"command": None, "error": None}
+    def target():
+        try:
+            result["command"] = provider.generate_command(user_input, cwd, history_context)
+        except Exception as e:
+            result["error"] = e
+
+    thread = threading.Thread(target=target)
+    thread.daemon = True
+    thread.start()
+
+    print("\033[36mThinking... (ESC to cancel)\033[0m", end="\r")
+    while thread.is_alive():
+        if is_esc_pressed():
+            print("\n\033[31mCancelled.\033[0m")
+            raise GoBackException()
+        time.sleep(0.02)
+    
+    print(" " * 30, end="\r")
+    if result["error"]:
+        raise result["error"]
+    return result["command"]
 
 def get_command(provider, user_input: str, cwd: str) -> str:
     history_context = format_history()
     try:
-        return provider.generate_command(user_input, cwd, history_context)
+        return interruptible_generate(provider, user_input, cwd, history_context)
+    except GoBackException:
+        raise
     except Exception as e:
         return f"echo AI Error: {e}"
+
+def execute_with_streaming(command: str):
+    bash_path = r"C:\Program Files\Git\bin\bash.exe"
+    if not os.path.exists(bash_path):
+        bash_path = "bash"
+
+    try:
+        process = subprocess.Popen(
+            [bash_path, "-c", command],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+    except FileNotFoundError:
+        process = subprocess.Popen(
+            command,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+
+    output_full = []
+    
+    def stream_reader(pipe, is_stderr=False):
+        for line in iter(pipe.readline, ''):
+            if is_stderr:
+                print(line, end="", file=sys.stderr)
+            else:
+                print(line, end="")
+            output_full.append(line)
+
+    t1 = threading.Thread(target=stream_reader, args=(process.stdout, False))
+    t2 = threading.Thread(target=stream_reader, args=(process.stderr, True))
+    t1.daemon = True
+    t2.daemon = True
+    t1.start()
+    t2.start()
+
+    while process.poll() is None:
+        if is_esc_pressed():
+            print("\n\033[31m[ESC] Stopping process tree...\033[0m")
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)], 
+                           capture_output=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+            process.terminate()
+            raise GoBackException()
+        time.sleep(0.02)
+
+    t1.join(timeout=1)
+    t2.join(timeout=1)
+    
+    add_to_history(command, "".join(output_full))
 
 def execute_command_with_safety(command: str) -> bool:
     risk = CommandSafety.classify(command)
@@ -23,7 +108,7 @@ def execute_command_with_safety(command: str) -> bool:
     if risk == CommandRisk.CAUTION:
         print(f"\033[33m[CAUTION] {description}\033[0m")
         print(f"\033[33m  Command: {command}\033[0m")
-        confirm = input("\033[33mExecute? [y/N]\033[0m ")
+        confirm = safe_input("\033[33mExecute? [y/N]\033[0m ")
         if confirm.lower() != 'y':
             return False
 
@@ -49,22 +134,9 @@ def execute_command_with_safety(command: str) -> bool:
         return True
 
     try:
-        bash_path = r"C:\Program Files\Git\bin\bash.exe"
-        if not os.path.exists(bash_path):
-            bash_path = "bash"
-
-        result = subprocess.run([bash_path, "-c", command], capture_output=True, text=True)
-
-        print(result.stdout, end="")
-        if result.stderr:
-            print(result.stderr, end="", file=sys.stderr)
-        add_to_history(command, result.stdout + result.stderr)
-    except FileNotFoundError:
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
-        print(result.stdout, end="")
-        if result.stderr:
-            print(result.stderr, end="", file=sys.stderr)
-        add_to_history(command, result.stdout + result.stderr)
+        execute_with_streaming(command)
+    except GoBackException:
+        raise
     except Exception as e:
         print(f"\033[31mExecution Error: {e}\033[0m")
         return False

@@ -1,5 +1,6 @@
 import os
 from providers import GeminiProvider, ZAIProvider, OpenRouterProvider
+from utils import safe_input
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(SCRIPT_DIR, ".env")
@@ -38,13 +39,14 @@ def setup_api_keys():
     print("1. Gemini (Google)")
     print("2. Z.ai (GLM)")
     print("3. OpenRouter (GLM-4.5-Air Free)")
-    choice = input("\033[33mSelect provider to set key [1/2/3]: \033[0m").strip()
+    choice = safe_input("\033[33mSelect provider to set key [1/2/3]: \033[0m")
     
     provider_map = {"1": "gemini", "2": "zai", "3": "openrouter"}
     provider_name = provider_map.get(choice)
     
     if not provider_name:
-        print("Invalid choice.")
+        if choice:
+            print("Invalid choice.")
         return False
 
     env_key_map = {
@@ -62,7 +64,7 @@ def setup_api_keys():
     url = url_map[provider_name]
     
     print(f"\n\033[36mGet your key at: {url}\033[0m\n")
-    api_key = input(f"\033[33mEnter your {provider_name.upper()} API key:\033[0m ").strip()
+    api_key = safe_input(f"\033[33mEnter your {provider_name.upper()} API key:\033[0m ")
     
     if api_key:
         save_config({env_key: api_key})
@@ -76,13 +78,14 @@ def select_model():
     print("1. Gemini (Google)")
     print("2. Z.ai (GLM)")
     print("3. OpenRouter (GLM-4.5-Air Free)")
-    choice = input("\033[33mChoice [1/2/3]: \033[0m").strip()
+    choice = safe_input("\033[33mChoice [1/2/3]: \033[0m")
     
     provider_map = {"1": "gemini", "2": "zai", "3": "openrouter"}
     provider_name = provider_map.get(choice)
     
     if not provider_name:
-        print("Invalid choice.")
+        if choice:
+            print("Invalid choice.")
         return False
     
     save_config({"AI_PROVIDER": provider_name})

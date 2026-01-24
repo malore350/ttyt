@@ -1,8 +1,35 @@
 import sys
+import msvcrt
+from prompt_toolkit import prompt
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.formatted_text import ANSI
+
+class GoBackException(Exception):
+    pass
 
 def exit_handler(sig, frame):
     print("\n\033[31mExiting...\033[0m")
     sys.exit(0)
+
+def safe_input(text: str) -> str:
+    kb = KeyBindings()
+    
+    @kb.add('escape', eager=True)
+    def _(event):
+        event.app.exit(exception=GoBackException)
+
+    try:
+        return prompt(ANSI(text), key_bindings=kb).strip()
+    except GoBackException:
+        raise
+    except EOFError:
+        raise KeyboardInterrupt()
+
+def is_esc_pressed():
+    while msvcrt.kbhit():
+        if msvcrt.getch() == b'\x1b':
+            return True
+    return False
 
 def show_help():
     print("\033[36m/api\033[0m       - Set/update API keys")

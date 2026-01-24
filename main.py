@@ -12,7 +12,7 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.filters import has_completions
 
-from utils import exit_handler, show_help, is_natural_language
+from utils import exit_handler, show_help, is_natural_language, GoBackException
 from config import load_env, setup_provider, get_current_provider, select_model, setup_api_keys, ENV_PATH
 from core import get_command, execute_command_with_safety
 
@@ -53,6 +53,10 @@ def main():
                 return
         b.validate_and_handle()
 
+    @kb.add('escape', eager=True)
+    def _(event):
+        event.current_buffer.reset()
+
     session = PromptSession(
         completer=completer, 
         complete_while_typing=True,
@@ -89,7 +93,7 @@ def main():
                 continue
             
             if user_input == "/uninstall":
-                confirm = input("\033[33mRemove configuration? [y/N]\033[0m ")
+                confirm = safe_input("\033[33mRemove configuration? [y/N]\033[0m ")
                 if confirm.lower() == "y":
                     if os.path.exists(ENV_PATH):
                         os.remove(ENV_PATH)
@@ -115,6 +119,9 @@ def main():
                 command = get_command(provider, user_input, cwd)
                 execute_command_with_safety(command)
             
+        except GoBackException:
+            print()
+            continue
         except (EOFError, InterruptedError, KeyboardInterrupt):
             print("\n\033[31mExiting...\033[0m")
             sys.exit(0)
