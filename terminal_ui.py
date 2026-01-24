@@ -16,6 +16,7 @@ COMMANDS = {
     "/models": "Switch AI provider or model",
     "/new": "Clear terminal screen",
     "/uninstall": "Remove ttyt configuration",
+    "/ask": "Ask a question (no command execution)",
     "/help": "Show help and command safety info",
 }
 

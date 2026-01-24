@@ -40,3 +40,22 @@ Rules:
             messages=[{"role": "user", "content": prompt}]
         )
         return response.choices[0].message.content.strip()
+
+    def generate_answer(self, user_input: str, cwd: str, history_context: str) -> str:
+        prompt = f"""You are a helpful assistant. Answer the user's question directly and concisely.
+Current directory: {cwd}
+
+Recent command history:
+{history_context}
+
+Rules:
+- Provide a direct answer
+- No shell commands unless explicitly asked
+- No markdown fences
+- User question: {user_input}"""
+
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.choices[0].message.content.strip()

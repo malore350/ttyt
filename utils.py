@@ -70,6 +70,7 @@ def show_help():
         '<style color="#89b4fa">/models</style>    Switch AI provider/model\n'
         '<style color="#89b4fa">/new</style>       Clear terminal screen\n'
         '<style color="#89b4fa">/uninstall</style> Remove configuration\n'
+        '<style color="#89b4fa">/ask</style>       Ask a question (no command execution)\n'
         '<style color="#89b4fa">/help</style>      Show this help\n'
         '<style color="#89b4fa">/cmd</style>       Run command directly\n'
         '\n'

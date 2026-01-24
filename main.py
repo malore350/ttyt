@@ -8,7 +8,7 @@ except ImportError:
 
 from utils import exit_handler, show_help, is_natural_language, GoBackException, safe_input
 from config import load_env, setup_provider, get_current_provider, select_model, setup_api_keys, ENV_PATH
-from core import get_command, execute_command_with_safety
+from core import get_command, get_answer, execute_command_with_safety
 from terminal_ui import TerminalUI
 
 def main():
@@ -69,6 +69,16 @@ def main():
             
             if user_input == "/help":
                 show_help()
+                continue
+
+            if user_input.startswith("/ask"):
+                question = user_input[4:].strip()
+                if not question:
+                    question = safe_input("Ask: ")
+                if not question:
+                    continue
+                answer = get_answer(provider, question, cwd)
+                ui.print_message(answer)
                 continue
             
             if user_input.startswith("/"):

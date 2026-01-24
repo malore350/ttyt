@@ -40,6 +40,33 @@ def interruptible_generate(provider, user_input, cwd, history_context):
     
     return result["command"]
 
+def interruptible_answer(provider, user_input, cwd, history_context):
+    result = {"answer": None, "error": None}
+    def target():
+        try:
+            result["answer"] = provider.generate_answer(user_input, cwd, history_context)
+        except Exception as e:
+            result["error"] = e
+
+    thread = threading.Thread(target=target)
+    thread.daemon = True
+    thread.start()
+
+    with Live(Text("Thinking...", style="cyan"), refresh_per_second=10) as live:
+        while thread.is_alive():
+            if is_esc_pressed():
+                live.update(Text("Cancelled.", style="red"))
+                raise GoBackException()
+            time.sleep(0.02)
+
+        if result["error"]:
+            live.update(Text(f"Error: {result['error']}", style="red"))
+            raise result["error"]
+
+        live.update(Text(""))
+
+    return result["answer"]
+
 def get_command(provider, user_input: str, cwd: str) -> str:
     history_context = format_history()
     try:
@@ -48,6 +75,15 @@ def get_command(provider, user_input: str, cwd: str) -> str:
         raise
     except Exception as e:
         return f"echo AI Error: {e}"
+
+def get_answer(provider, user_input: str, cwd: str) -> str:
+    history_context = format_history()
+    try:
+        return interruptible_answer(provider, user_input, cwd, history_context)
+    except GoBackException:
+        raise
+    except Exception as e:
+        return f"AI Error: {e}"
 
 def execute_with_streaming(command: str):
     bash_path = r"C:\Program Files\Git\bin\bash.exe"
