@@ -9,6 +9,7 @@ except ImportError:
 from utils import exit_handler, show_help, is_natural_language, GoBackException, safe_input
 from config import load_env, setup_provider, get_current_provider, select_model, setup_api_keys, ENV_PATH
 from core import get_command, get_answer, execute_command_with_safety
+from history import clear_history
 from terminal_ui import TerminalUI
 
 def main():
@@ -55,6 +56,7 @@ def main():
             
             if user_input == "/new":
                 os.system('cls' if os.name == 'nt' else 'clear')
+                clear_history()
                 ui.print_welcome(provider)
                 continue
 

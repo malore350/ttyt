@@ -8,7 +8,7 @@ from rich.panel import Panel
 from rich.live import Live
 from rich.text import Text
 from safety import CommandSafety, CommandRisk
-from history import add_to_history, format_history
+from history import add_to_history, add_chat_to_history, format_history
 from utils import safe_input, is_esc_pressed, GoBackException
 
 console = Console()
@@ -79,7 +79,9 @@ def get_command(provider, user_input: str, cwd: str) -> str:
 def get_answer(provider, user_input: str, cwd: str) -> str:
     history_context = format_history()
     try:
-        return interruptible_answer(provider, user_input, cwd, history_context)
+        answer = interruptible_answer(provider, user_input, cwd, history_context)
+        add_chat_to_history(user_input, answer)
+        return answer
     except GoBackException:
         raise
     except Exception as e:

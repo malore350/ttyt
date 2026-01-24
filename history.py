@@ -8,12 +8,18 @@ def get_context_size() -> int:
 def add_to_history(command: str, output: str = ""):
     command_history.append({
         "command": command,
-        "output": output[:500] if output else ""
+        "output": output[:2000] if output else ""
     })
     while len(command_history) > MAX_HISTORY:
         command_history.pop(0)
     while get_context_size() > MAX_CONTEXT_CHARS and len(command_history) > 1:
         command_history.pop(0)
+
+def add_chat_to_history(question: str, answer: str = ""):
+    add_to_history(f"Q: {question}", f"A: {answer}" if answer else "")
+
+def clear_history() -> None:
+    command_history.clear()
 
 def format_history() -> str:
     if not command_history:
@@ -23,7 +29,7 @@ def format_history() -> str:
     for i, entry in enumerate(command_history[-5:], 1):
         lines.append(f"{i}. > {entry['command']}")
         if entry['output']:
-            output_lines = entry['output'].strip().split('\n')[:2]
+            output_lines = entry['output'].strip().split('\n')
             for line in output_lines:
                 lines.append(f"   {line}")
     return "\n".join(lines)
