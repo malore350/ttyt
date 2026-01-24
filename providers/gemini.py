@@ -21,8 +21,11 @@ Rules:
 - Output ONLY the command, nothing else
 - No explanations, no markdown, no backticks
 - If unclear, make a reasonable assumption
-- Prefer standard Unix/Bash commands (ls, cat, cp, mv, rm, grep, find, etc.)
-- Use forward slashes (/) for paths
+- Use ONLY Git Bash compatible commands.
+- AVOID Linux-only commands (e.g., pgrep, ps -ef, htop, ssh-copy-id).
+- For process listing, use 'tasklist | grep <name>'.
+- For killing processes, use 'taskkill //F //PID <pid>'.
+- Use forward slashes (/) for paths.
 - User request: {user_input}"""
         response = self.client.models.generate_content(
             model=self.model_name,

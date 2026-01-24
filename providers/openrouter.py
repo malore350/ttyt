@@ -2,7 +2,7 @@ from providers.base import AIProvider
 
 class OpenRouterProvider(AIProvider):
     def __init__(self, api_key: str):
-        self.model_name = "z-ai/glm-4.5-air:free"
+        self.model_name = "nvidia/nemotron-3-nano-30b-a3b:free"
         try:
             from openai import OpenAI
             self.client = OpenAI(
@@ -28,8 +28,11 @@ Rules:
 - Output ONLY the command, nothing else
 - No explanations, no markdown, no backticks
 - If unclear, make a reasonable assumption
-- Prefer standard Unix/Bash commands (ls, cat, cp, mv, rm, grep, find, etc.)
-- Use forward slashes (/) for paths
+- Use ONLY Git Bash compatible commands.
+- AVOID Linux-only commands (e.g., pgrep, ps -ef, htop, ssh-copy-id).
+- For process listing, use 'tasklist | grep <name>'.
+- For killing processes, use 'taskkill //F //PID <pid>'.
+- Use forward slashes (/) for paths.
 - User request: {user_input}"""
         
         response = self.client.chat.completions.create(

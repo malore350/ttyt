@@ -6,6 +6,12 @@ try:
 except ImportError:
     colorama = None
 
+from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.styles import Style
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.filters import has_completions
+
 from utils import exit_handler, show_help, is_natural_language
 from config import load_env, setup_provider, get_current_provider, select_model, setup_api_keys, ENV_PATH
 from core import get_command, execute_command_with_safety
@@ -30,28 +36,59 @@ def main():
     print(f"Using provider: \033[36m{os.getenv('AI_PROVIDER', 'gemini')}\033[0m (\033[35m{provider.model_name}\033[0m)\n")
     show_help()
 
+    commands = ["/api", "/models", "/uninstall", "/help"]
+    completer = WordCompleter(commands, ignore_case=True, sentence=True)
+
+    kb = KeyBindings()
+
+    @kb.add('enter', filter=has_completions)
+    def _(event):
+        b = event.current_buffer
+        if b.complete_state:
+            completion = b.complete_state.current_completion
+            if not completion and b.complete_state.completions:
+                completion = b.complete_state.completions[0]
+            if completion:
+                b.apply_completion(completion)
+                return
+        b.validate_and_handle()
+
+    session = PromptSession(
+        completer=completer, 
+        complete_while_typing=True,
+        key_bindings=kb
+    )
+
     while True:
         try:
             cwd = os.getcwd()
-            prompt = f"\033[32m{cwd}\033[0m > "
-            user_input = input(prompt).strip()
+            prompt_text = [
+                ('class:cwd', cwd),
+                ('class:separator', ' > '),
+            ]
+            style = Style.from_dict({
+                'cwd': '#00ff00',
+                'separator': '',
+            })
+            
+            user_input = session.prompt(prompt_text, style=style).strip()
             
             if not user_input:
                 continue
 
-            if user_input == "!api":
+            if user_input == "/api":
                 setup_api_keys()
                 provider = get_current_provider()
                 continue
             
-            if user_input == "!models":
+            if user_input == "/models":
                 if select_model():
                     provider = get_current_provider()
                     if provider:
                         print(f"Switched to: \033[36m{os.getenv('AI_PROVIDER')}\033[0m (\033[35m{provider.model_name}\033[0m)\n")
                 continue
             
-            if user_input == "!uninstall":
+            if user_input == "/uninstall":
                 confirm = input("\033[33mRemove configuration? [y/N]\033[0m ")
                 if confirm.lower() == "y":
                     if os.path.exists(ENV_PATH):
@@ -60,11 +97,11 @@ def main():
                     sys.exit(0)
                 continue
             
-            if user_input == "!help":
+            if user_input == "/help":
                 show_help()
                 continue
             
-            if user_input.startswith("!"):
+            if user_input.startswith("/"):
                 cmd = user_input[1:]
                 if not cmd:
                     continue
@@ -79,8 +116,8 @@ def main():
                 execute_command_with_safety(command)
             
         except (EOFError, InterruptedError, KeyboardInterrupt):
-            print("\n")
-            continue
+            print("\n\033[31mExiting...\033[0m")
+            sys.exit(0)
         except Exception as e:
             err = str(e)
             if "429" in err or "quota" in err.lower():

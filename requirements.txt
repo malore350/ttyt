@@ -2,3 +2,4 @@ google-genai
 colorama
 zai-sdk
 openai
+prompt_toolkit

@@ -1,13 +1,15 @@
+import sys
+
 def exit_handler(sig, frame):
-    print()
-    raise InterruptedError()
+    print("\n\033[31mExiting...\033[0m")
+    sys.exit(0)
 
 def show_help():
-    print("\033[36m!api\033[0m       - Set/update API keys")
-    print("\033[36m!models\033[0m    - Switch AI provider/model")
-    print("\033[36m!uninstall\033[0m - Remove configuration")
-    print("\033[36m!help\033[0m      - Show this help")
-    print("\033[36m!cmd\033[0m       - Run cmd directly")
+    print("\033[36m/api\033[0m       - Set/update API keys")
+    print("\033[36m/models\033[0m    - Switch AI provider/model")
+    print("\033[36m/uninstall\033[0m - Remove configuration")
+    print("\033[36m/help\033[0m      - Show this help")
+    print("\033[36m/cmd\033[0m       - Run cmd directly")
     print("\033[36m\nCommand Safety:\033[0m")
     print("\033[32m[SAFE]\033[0m      - Read-only commands auto-execute")
     print("\033[33m[CAUTION]\033[0m   - Confirm before execution")
@@ -15,7 +17,7 @@ def show_help():
     print()
 
 def is_natural_language(text: str) -> bool:
-    if text.startswith("!"):
+    if text.startswith("/"):
         return False
     shell_commands = ["ls", "cd", "clear", "exit", "pwd", "cp", "rm", "mv", 
                       "mkdir", "rmdir", "cat", "echo", "export", "grep", "find", 

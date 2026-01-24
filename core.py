@@ -49,7 +49,12 @@ def execute_command_with_safety(command: str) -> bool:
         return True
 
     try:
-        result = subprocess.run(["bash", "-c", command], capture_output=True, text=True)
+        bash_path = r"C:\Program Files\Git\bin\bash.exe"
+        if not os.path.exists(bash_path):
+            bash_path = "bash"
+
+        result = subprocess.run([bash_path, "-c", command], capture_output=True, text=True)
+
         print(result.stdout, end="")
         if result.stderr:
             print(result.stderr, end="", file=sys.stderr)
