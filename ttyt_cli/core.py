@@ -1,9 +1,10 @@
 import os
+import signal
 import subprocess
 import threading
 import time
 import shlex
-from typing import Any
+from typing import Any, List, Tuple
 from rich.console import Console
 from rich.panel import Panel
 from rich.live import Live
@@ -113,7 +114,14 @@ def execute_with_streaming(command: str):
             universal_newlines=True
         )
 
-    output_full = []
+    output_full: List[str] = []
+    interrupted = False
+    
+    def sigint_handler(sig, frame):
+        nonlocal interrupted
+        interrupted = True
+    
+    old_handler = signal.signal(signal.SIGINT, sigint_handler)
     
     def stream_reader(pipe, is_stderr=False):
         import sys
@@ -133,35 +141,66 @@ def execute_with_streaming(command: str):
     t1.start()
     t2.start()
 
-    while process.poll() is None:
-        if is_esc_pressed():
-            console.print("\n[red][ESC] Stopping process tree...[/red]")
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)], 
-                           capture_output=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-            process.terminate()
-            raise GoBackException()
-        time.sleep(0.02)
+    try:
+        while process.poll() is None:
+            if interrupted or is_esc_pressed():
+                console.print("\n[red][CTRL+C] Stopping process...[/red]")
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)], 
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                process.terminate()
+                break
+            time.sleep(0.02)
+    finally:
+        signal.signal(signal.SIGINT, old_handler)
 
     t1.join(timeout=1)
     t2.join(timeout=1)
     
     add_to_history(command, "".join(output_full))
 
+def _format_chain_breakdown(chain_results: List[Tuple[str, CommandRisk]]) -> str:
+    """Format breakdown of chained command risks for display."""
+    if len(chain_results) <= 1:
+        return ""
+    
+    lines: List[str] = []
+    for i, (subcmd, risk) in enumerate(chain_results, 1):
+        if risk == CommandRisk.DANGER:
+            color = "red"
+            label = "DANGER"
+        elif risk == CommandRisk.CAUTION:
+            color = "yellow" 
+            label = "CAUTION"
+        else:
+            color = "green"
+            label = "SAFE"
+        lines.append(f"  [{color}]{i}. [{label}][/{color}] [dim]{subcmd}[/dim]")
+    
+    return "\n".join(lines)
+
 def execute_command_with_safety(command: str) -> bool:
     risk = CommandSafety.classify(command)
     description = CommandSafety.get_risk_description(risk)
+    chain_results = CommandSafety.classify_chain(command)
+    chain_breakdown = _format_chain_breakdown(chain_results)
 
     if risk == CommandRisk.DANGER:
+        content = f"[bold red]BLOCKED:[/bold red] {description}\n[dim]Command: {command}[/dim]"
+        if chain_breakdown:
+            content += f"\n\n[bold]Command breakdown:[/bold]\n{chain_breakdown}"
         console.print(Panel(
-            Text.from_markup(f"[bold red]BLOCKED:[/bold red] {description}\n[dim]Command: {command}[/dim]"),
+            Text.from_markup(content),
             title="[bold red]DANGER[/bold red]",
             border_style="red"
         ))
         return False
 
     if risk == CommandRisk.CAUTION:
+        content = f"[bold yellow]WARNING:[/bold yellow] {description}\n[dim]Command: {command}[/dim]"
+        if chain_breakdown:
+            content += f"\n\n[bold]Command breakdown:[/bold]\n{chain_breakdown}"
         console.print(Panel(
-            Text.from_markup(f"[bold yellow]WARNING:[/bold yellow] {description}\n[dim]Command: {command}[/dim]"),
+            Text.from_markup(content),
             title="[bold yellow]CAUTION[/bold yellow]",
             border_style="yellow"
         ))

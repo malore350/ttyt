@@ -1,10 +1,19 @@
 import re
 from enum import Enum
+from typing import List, Tuple
 
 class CommandRisk(Enum):
     SAFE = "safe"
     CAUTION = "caution"
     DANGER = "danger"
+    
+    def __lt__(self, other):
+        order = {CommandRisk.SAFE: 0, CommandRisk.CAUTION: 1, CommandRisk.DANGER: 2}
+        return order[self] < order[other]
+    
+    def __gt__(self, other):
+        order = {CommandRisk.SAFE: 0, CommandRisk.CAUTION: 1, CommandRisk.DANGER: 2}
+        return order[self] > order[other]
 
 class CommandSafety:
     """Command safety classifier with three-tier risk assessment (Bash-centric)"""
@@ -47,11 +56,8 @@ class CommandSafety:
         "format", "fdisk", "parted", "del", "rmdir", "taskkill",
     }
 
-    # Caution patterns - commands requiring confirmation
+    # Caution patterns - commands requiring confirmation (excluding chain operators, handled separately)
     CAUTION_PATTERNS = [
-        r'\|\|',
-        r'&&',
-        r';',
         r'&\s*$',
         r'>',
         r'>>',
@@ -60,6 +66,9 @@ class CommandSafety:
         r'`',
         r'sudo',
     ]
+    
+    # Chain operators that require splitting and individual analysis
+    CHAIN_OPERATORS = ['&&', '||', ';']
 
     # Package managers
     PACKAGE_MANAGERS = {
@@ -77,22 +86,62 @@ class CommandSafety:
     }
 
     @classmethod
-    def classify(cls, command: str) -> CommandRisk:
-        """
-        Classify a command by risk level.
-        Returns: CommandRisk (SAFE, CAUTION, DANGER)
-        """
+    def _split_chained_command(cls, command: str) -> List[str]:
+        """Split command on chain operators (&&, ||, ;) while respecting quotes."""
+        parts: List[str] = []
+        current: List[str] = []
+        in_single_quote = False
+        in_double_quote = False
+        i = 0
+        
+        while i < len(command):
+            char = command[i]
+            
+            if char == "'" and not in_double_quote:
+                in_single_quote = not in_single_quote
+                current.append(char)
+                i += 1
+            elif char == '"' and not in_single_quote:
+                in_double_quote = not in_double_quote
+                current.append(char)
+                i += 1
+            elif not in_single_quote and not in_double_quote:
+                remaining = command[i:]
+                matched = False
+                for op in cls.CHAIN_OPERATORS:
+                    if remaining.startswith(op):
+                        part = ''.join(current).strip()
+                        if part:
+                            parts.append(part)
+                        current = []
+                        i += len(op)
+                        matched = True
+                        break
+                if not matched:
+                    current.append(char)
+                    i += 1
+            else:
+                current.append(char)
+                i += 1
+                    
+        part = ''.join(current).strip()
+        if part:
+            parts.append(part)
+            
+        return parts if len(parts) > 1 else []
+
+    @classmethod
+    def _classify_single(cls, command: str) -> CommandRisk:
+        """Classify a single command (no chain operators)."""
         if not command or not command.strip():
             return CommandRisk.CAUTION
 
         cmd_lower = command.strip().lower()
 
-        # Check for danger commands first (highest priority)
         for danger_cmd in cls.DANGER_COMMANDS:
             if cmd_lower.startswith(danger_cmd + " ") or cmd_lower == danger_cmd:
                 return CommandRisk.DANGER
 
-        # Check for command chaining/redirection (caution)
         for pattern in cls.CAUTION_PATTERNS:
             if re.search(pattern, command):
                 return CommandRisk.CAUTION
@@ -133,27 +182,51 @@ class CommandSafety:
                 return CommandRisk.SAFE
             return CommandRisk.CAUTION
 
-        # Check for package managers
         first_token = cmd_lower.split()[0] if cmd_lower.split() else ""
         if first_token in cls.PACKAGE_MANAGERS:
             return CommandRisk.CAUTION
 
-        # Check for safe commands
         for safe_cmd in cls.SAFE_COMMANDS:
             if cmd_lower.startswith(safe_cmd + " ") or cmd_lower == safe_cmd:
-                # Special handling for git
                 if safe_cmd == "git":
                     return cls._classify_git_command(command)
                 return CommandRisk.SAFE
 
-        # File modification commands (caution)
         file_mod_commands = {"copy", "move", "ren", "rename", "xcopy", "robocopy", "md", "mkdir"}
         for mod_cmd in file_mod_commands:
             if cmd_lower.startswith(mod_cmd + " ") or cmd_lower == mod_cmd:
                 return CommandRisk.CAUTION
 
-        # Unknown command - treat as caution
         return CommandRisk.CAUTION
+
+    @classmethod
+    def classify_chain(cls, command: str) -> List[Tuple[str, CommandRisk]]:
+        """Classify each part of a chained command. Returns list of (subcmd, risk) tuples."""
+        parts = cls._split_chained_command(command)
+        if not parts:
+            return [(command, cls._classify_single(command))]
+        return [(part, cls._classify_single(part)) for part in parts]
+
+    @classmethod
+    def classify(cls, command: str) -> CommandRisk:
+        """
+        Classify a command by risk level.
+        For chained commands, returns the HIGHEST risk level found.
+        Returns: CommandRisk (SAFE, CAUTION, DANGER)
+        """
+        if not command or not command.strip():
+            return CommandRisk.CAUTION
+
+        chain_results = cls.classify_chain(command)
+        
+        if len(chain_results) > 1:
+            highest_risk = CommandRisk.SAFE
+            for _, risk in chain_results:
+                if risk > highest_risk:
+                    highest_risk = risk
+            return highest_risk
+        
+        return cls._classify_single(command)
 
     @classmethod
     def _classify_git_command(cls, command: str) -> CommandRisk:
