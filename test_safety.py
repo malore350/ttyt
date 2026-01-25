@@ -4,7 +4,7 @@
 import sys
 sys.path.insert(0, '.')
 
-from safety import CommandSafety, CommandRisk
+from ttyt_cli.safety import CommandSafety, CommandRisk
 
 def test_command_classification():
     """Test various commands to ensure proper classification"""

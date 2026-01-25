@@ -1,14 +1,19 @@
 import os
-from dialogs import show_radio_list, show_input
-from styles import get_ttyt_style
-from providers import GeminiProvider, ZAIProvider, OpenRouterProvider
-from utils import safe_input
+from pathlib import Path
+from .dialogs import show_radio_list, show_input
+from .styles import get_ttyt_style
+from .providers import GeminiProvider, ZAIProvider, OpenRouterProvider
+from .utils import safe_input
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ENV_PATH = os.path.join(SCRIPT_DIR, ".env")
+CONFIG_DIR = Path.home() / ".ttyt"
+ENV_PATH = CONFIG_DIR / ".env"
+
+def ensure_config_dir():
+    if not CONFIG_DIR.exists():
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 def load_env():
-    if os.path.exists(ENV_PATH):
+    if ENV_PATH.exists():
         with open(ENV_PATH) as f:
             for line in f:
                 line = line.strip()
@@ -17,8 +22,9 @@ def load_env():
                     os.environ[key] = value
 
 def save_config(config: dict[str, str]):
+    ensure_config_dir()
     lines = []
-    if os.path.exists(ENV_PATH):
+    if ENV_PATH.exists():
         with open(ENV_PATH, "r") as f:
             existing = {}
             for line in f:
@@ -36,10 +42,44 @@ def save_config(config: dict[str, str]):
     with open(ENV_PATH, "w") as f:
         f.write("\n".join(lines) + "\n")
 
+def ensure_api_key_for_provider(provider: str) -> bool:
+    env_key_map = {
+        "gemini": "GEMINI_API_KEY",
+        "zai": "ZAI_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY"
+    }
+    url_map = {
+        "gemini": "https://aistudio.google.com/apikey",
+        "zai": "https://z.ai/model-api",
+        "openrouter": "https://openrouter.ai/keys"
+    }
+
+    env_key = env_key_map.get(provider)
+    if not env_key:
+        return True
+
+    if os.getenv(env_key):
+        return True
+    
+    url = url_map.get(provider, "")
+    api_key = show_input(
+        title=f"Set {provider.upper()} API Key",
+        text=f"API Key for {provider} not found.\nGet your key at: {url}\n\nEnter API Key:",
+        password=True,
+        style=get_ttyt_style()
+    )
+    
+    if api_key:
+        save_config({env_key: api_key})
+        os.environ[env_key] = api_key
+        return True
+    
+    return False
+
 def setup_api_keys():
     current = os.getenv("AI_PROVIDER")
     while True:
-        provider_choice = show_radio_list(
+        provider = show_radio_list(
             title="Manage API Keys",
             values=[
                 ("gemini", "Google (Gemini)"),
@@ -50,7 +90,7 @@ def setup_api_keys():
             style=get_ttyt_style()
         )
         
-        if not provider_choice:
+        if not provider:
             return False
 
         env_key_map = {
@@ -64,11 +104,13 @@ def setup_api_keys():
             "openrouter": "https://openrouter.ai/keys"
         }
         
-        env_key = env_key_map[provider_choice]
-        url = url_map[provider_choice]
-        
+        env_key = env_key_map.get(provider)
+        if not env_key:
+            continue
+            
+        url = url_map.get(provider, "")
         api_key = show_input(
-            title=f"Set {provider_choice.upper()} API Key",
+            title=f"Set {provider.upper()} API Key",
             text=f"Get your key at: {url}\n\nEnter API Key:",
             password=True,
             style=get_ttyt_style()
@@ -96,12 +138,16 @@ def select_model():
         if not provider:
             return False
 
+        if not ensure_api_key_for_provider(provider):
+            continue
+
         gemini_model = None
         zai_model = None
         if provider == "gemini" and current_provider == "gemini":
             gemini_model = os.getenv("GEMINI_MODEL")
         if provider == "zai" and current_provider == "zai":
             zai_model = os.getenv("ZAI_MODEL")
+            
         if provider == "gemini":
             gemini_values = [
                 ("__unset__", "Select a model..."),
@@ -151,20 +197,7 @@ def select_model():
         return True
 
 def setup_provider():
-    if not select_model():
-        return False
-    
-    provider_name = os.getenv("AI_PROVIDER")
-    if provider_name is None:
-        return False
-    env_key_map = {"gemini": "GEMINI_API_KEY", "zai": "ZAI_API_KEY", "openrouter": "OPENROUTER_API_KEY"}
-    env_key = env_key_map.get(provider_name)
-    if not env_key:
-        return False
-
-    if not os.getenv(env_key):
-        return setup_api_keys()
-    return True
+    return select_model()
 
 def get_current_provider():
     provider_name = os.getenv("AI_PROVIDER", "gemini")

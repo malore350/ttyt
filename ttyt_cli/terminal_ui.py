@@ -3,7 +3,7 @@ import sys
 from datetime import datetime
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style
-from styles import get_ttyt_style
+from .styles import get_ttyt_style
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.completion import WordCompleter

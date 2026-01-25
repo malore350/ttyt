@@ -1,6 +1,6 @@
 import os
 from typing import Any, Optional, cast
-from providers.base import AIProvider
+from .base import AIProvider
 
 class ZAIProvider(AIProvider):
     def __init__(self, api_key: str, model_name: Optional[str] = None):

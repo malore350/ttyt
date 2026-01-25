@@ -3,8 +3,8 @@ import msvcrt
 from prompt_toolkit import prompt
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.formatted_text import ANSI, HTML
-from dialogs import show_message
-from styles import get_ttyt_style
+from .dialogs import show_message
+from .styles import get_ttyt_style
 
 class GoBackException(Exception):
     pass

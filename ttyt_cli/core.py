@@ -7,9 +7,9 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.live import Live
 from rich.text import Text
-from safety import CommandSafety, CommandRisk
-from history import add_to_history, add_chat_to_history, format_history
-from utils import safe_input, is_esc_pressed, GoBackException
+from .safety import CommandSafety, CommandRisk
+from .history import add_to_history, add_chat_to_history, format_history
+from .utils import safe_input, is_esc_pressed, GoBackException
 
 console = Console()
 

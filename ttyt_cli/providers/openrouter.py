@@ -1,4 +1,4 @@
-from providers.base import AIProvider
+from .base import AIProvider
 
 class OpenRouterProvider(AIProvider):
     def __init__(self, api_key: str):
