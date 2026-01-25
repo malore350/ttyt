@@ -2,6 +2,7 @@ import os
 import subprocess
 import threading
 import time
+import shlex
 from typing import Any
 from rich.console import Console
 from rich.panel import Panel
@@ -115,11 +116,14 @@ def execute_with_streaming(command: str):
     output_full = []
     
     def stream_reader(pipe, is_stderr=False):
+        import sys
         for line in iter(pipe.readline, ''):
             if is_stderr:
-                console.print(line, end="", style="red")
+                sys.stderr.write(line)
+                sys.stderr.flush()
             else:
-                console.print(line, end="")
+                sys.stdout.write(line)
+                sys.stdout.flush()
             output_full.append(line)
 
     t1 = threading.Thread(target=stream_reader, args=(process.stdout, False))
@@ -168,23 +172,30 @@ def execute_command_with_safety(command: str) -> bool:
     if risk == CommandRisk.SAFE:
         console.print(f"[cyan][SAFE] {description}[/cyan]")
 
-    cmd_parts = command.strip().split()
-    if cmd_parts and cmd_parts[0] == "cd":
-        path = "~"
-        if len(cmd_parts) > 1:
-            path = command.strip()[3:].strip()
-            if (path.startswith('"') and path.endswith('"')) or (path.startswith("'") and path.endswith("'")):
-                path = path[1:-1]
+    try:
+        parts = shlex.split(command)
+    except:
+        parts = command.strip().split()
+
+    if parts and parts[0] == "cd":
+        shell_operators = ['&&', '||', ';', '|', '>', '<', '`', '$', '(', ')']
+        has_operator = any(op in command for op in shell_operators)
         
-        if path.startswith('/') and len(path) >= 3 and path[1].isalpha() and path[2] == '/':
-            path = f"{path[1]}:{path[2:]}"
-        
-        path = os.path.expanduser(path)
-        try:
-            os.chdir(path)
-        except Exception as e:
-            console.print(f"[red]cd: {e}[/red]")
-        return True
+        if len(parts) <= 2 and not has_operator:
+            path = "~"
+            if len(parts) > 1:
+                path = parts[1]
+            
+            if path.startswith('/') and len(path) >= 3 and path[1].isalpha() and path[2] == '/':
+                path = f"{path[1]}:{path[2:]}"
+            
+            path = os.path.expanduser(path)
+            try:
+                os.chdir(path)
+            except Exception as e:
+                console.print(f"[red]cd: {e}[/red]")
+            return True
+
 
     try:
         execute_with_streaming(command)
