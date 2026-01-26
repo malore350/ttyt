@@ -53,7 +53,7 @@ class CommandSafety:
         # Process termination
         "kill -9", "pkill -9", "killall -9",
         # System-destructive (if running with sudo/privilege)
-        "format", "fdisk", "parted", "del", "rmdir", "taskkill",
+        "format", "fdisk", "parted", "del", "rmdir",
     }
 
     # Caution patterns - commands requiring confirmation (excluding chain operators, handled separately)
@@ -138,6 +138,18 @@ class CommandSafety:
 
         cmd_lower = command.strip().lower()
 
+        # Special handling for taskkill - check if it's targeting specific PID vs image name
+        if cmd_lower.startswith("taskkill"):
+            # taskkill with /IM (image name) is dangerous - can kill multiple processes
+            if "/im" in cmd_lower.lower():
+                return CommandRisk.DANGER
+            # taskkill with /PID (specific process ID) is caution - user is targeting specific process
+            elif "/pid" in cmd_lower.lower():
+                return CommandRisk.CAUTION
+            # taskkill without clear targeting is dangerous
+            else:
+                return CommandRisk.DANGER
+
         for danger_cmd in cls.DANGER_COMMANDS:
             if cmd_lower.startswith(danger_cmd + " ") or cmd_lower == danger_cmd:
                 return CommandRisk.DANGER
@@ -211,7 +223,7 @@ class CommandSafety:
     def classify(cls, command: str) -> CommandRisk:
         """
         Classify a command by risk level.
-        For chained commands, returns the HIGHEST risk level found.
+        For chained commands, returns the HIGHEST risk level found (minimum CAUTION).
         Returns: CommandRisk (SAFE, CAUTION, DANGER)
         """
         if not command or not command.strip():
@@ -220,7 +232,7 @@ class CommandSafety:
         chain_results = cls.classify_chain(command)
         
         if len(chain_results) > 1:
-            highest_risk = CommandRisk.SAFE
+            highest_risk = CommandRisk.CAUTION
             for _, risk in chain_results:
                 if risk > highest_risk:
                     highest_risk = risk
