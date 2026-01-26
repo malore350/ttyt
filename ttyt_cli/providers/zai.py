@@ -44,6 +44,25 @@ Rules:
         content = response.choices[0].message.content
         return (content or "").strip()
 
+    def generate_answer(self, user_input: str, cwd: str, history_context: str) -> str:
+        prompt = f"""You are a helpful assistant. Answer the user's question directly and concisely.
+Current directory: {cwd}
+
+Recent command history:
+{history_context}
+
+Rules:
+- Provide a direct answer
+- No shell commands unless explicitly asked
+- No markdown fences
+- User question: {user_input}"""
+        response = cast(Any, self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[{"role": "user", "content": prompt}]
+        ))
+        content = response.choices[0].message.content
+        return (content or "").strip()
+
     def check_goal_achieved(self, goal: str, command: str, output: str, exit_code: int) -> Tuple[bool, str]:
         output_truncated = output[-2000:] if len(output) > 2000 else output
         

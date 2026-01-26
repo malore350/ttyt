@@ -129,7 +129,7 @@ def select_model():
             values=[
                 ("gemini", "Google (Gemini)"),
                 ("zai", "Z.ai (GLM)"),
-                ("openrouter", "OpenRouter (Nemotron-3-nano)"),
+                ("openrouter", "OpenRouter"),
             ],
             default=current_provider,
             style=get_ttyt_style()
@@ -143,10 +143,13 @@ def select_model():
 
         gemini_model = None
         zai_model = None
+        openrouter_model = None
         if provider == "gemini" and current_provider == "gemini":
             gemini_model = os.getenv("GEMINI_MODEL")
         if provider == "zai" and current_provider == "zai":
             zai_model = os.getenv("ZAI_MODEL")
+        if provider == "openrouter" and current_provider == "openrouter":
+            openrouter_model = os.getenv("OPENROUTER_MODEL")
             
         if provider == "gemini":
             gemini_values = [
@@ -181,12 +184,29 @@ def select_model():
             if not model_choice or model_choice == "__unset__":
                 continue
             zai_model = model_choice
+        elif provider == "openrouter":
+            openrouter_values = [
+                ("__unset__", "Select a model..."),
+                ("nvidia/nemotron-3-nano-30b-a3b:free", "nvidia/nemotron-3-nano-30b-a3b:free"),
+                ("google/gemma-3-27b-it:free", "google/gemma-3-27b-it:free"),
+            ]
+            model_choice = show_radio_list(
+                title="Select OpenRouter Model",
+                values=openrouter_values,
+                default=openrouter_model or ("__unset__" if current_provider != "openrouter" else None),
+                style=get_ttyt_style()
+            )
+            if not model_choice or model_choice == "__unset__":
+                continue
+            openrouter_model = model_choice
 
         config_update = {"AI_PROVIDER": provider}
         if gemini_model:
             config_update["GEMINI_MODEL"] = gemini_model
         if zai_model:
             config_update["ZAI_MODEL"] = zai_model
+        if openrouter_model:
+            config_update["OPENROUTER_MODEL"] = openrouter_model
 
         save_config(config_update)
         os.environ["AI_PROVIDER"] = provider
@@ -194,6 +214,8 @@ def select_model():
             os.environ["GEMINI_MODEL"] = gemini_model
         if zai_model:
             os.environ["ZAI_MODEL"] = zai_model
+        if openrouter_model:
+            os.environ["OPENROUTER_MODEL"] = openrouter_model
         return True
 
 def setup_provider():
@@ -220,7 +242,11 @@ def get_current_provider():
         elif provider_name == "zai":
             return ZAIProvider(api_key, os.getenv("ZAI_MODEL"))
         elif provider_name == "openrouter":
-            return OpenRouterProvider(api_key)
+            return OpenRouterProvider(api_key, os.getenv("OPENROUTER_MODEL"))
     except Exception as e:
         print(f"\033[31mError initializing provider {provider_name}: {e}\033[0m")
         return None
+
+def get_agent_require_confirmation() -> bool:
+    value = os.getenv("AGENT_REQUIRE_CONFIRMATION", "false").lower()
+    return value in ("true", "1", "yes", "on")

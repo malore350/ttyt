@@ -14,6 +14,7 @@ from prompt_toolkit.shortcuts import print_formatted_text
 COMMANDS = {
     "/api": "Set/update AI provider API keys",
     "/models": "Switch AI provider or model",
+    "/settings": "Configure ttyt behavior",
     "/new": "Start a new session",
     "/uninstall": "Remove ttyt configuration",
     "/ask": "Ask a question (no command execution)",

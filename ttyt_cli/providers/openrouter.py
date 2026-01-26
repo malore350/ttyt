@@ -1,9 +1,10 @@
+import os
 from typing import Optional, Tuple
 from .base import AIProvider
 
 class OpenRouterProvider(AIProvider):
-    def __init__(self, api_key: str):
-        self.model_name = "nvidia/nemotron-3-nano-30b-a3b:free"
+    def __init__(self, api_key: str, model_name: Optional[str] = None):
+        self.model_name = model_name or os.getenv("OPENROUTER_MODEL") or "nvidia/nemotron-3-nano-30b-a3b:free"
         try:
             from openai import OpenAI
             self.client = OpenAI(

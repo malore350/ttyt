@@ -11,6 +11,7 @@ from .config import load_env, setup_provider, get_current_provider, select_model
 from .core import get_command, get_answer, execute_command_with_safety, run_agentic_loop
 from .history import clear_history
 from .terminal_ui import TerminalUI
+from .settings import show_settings_menu
 
 def main():
     signal.signal(signal.SIGINT, exit_handler)
@@ -52,6 +53,10 @@ def main():
                     provider = get_current_provider()
                     if provider:
                         ui.print_message(f"Switched to: {os.getenv('AI_PROVIDER')} ({provider.model_name})", "path")
+                continue
+            
+            if user_input == "/settings":
+                show_settings_menu()
                 continue
             
             if user_input == "/new":

@@ -13,6 +13,7 @@ from .safety import CommandSafety, CommandRisk
 from .history import add_to_history, add_chat_to_history, format_history
 from .utils import safe_input, is_esc_pressed, GoBackException
 from .project_context import get_context_for_prompt
+from .config import get_agent_require_confirmation
 
 console = Console()
 
@@ -323,7 +324,21 @@ def execute_for_agent(command: str) -> Optional[ExecutionResult]:
         return ExecutionResult(exit_code=-1, output="BLOCKED: Dangerous command", interrupted=False)
 
     if risk == CommandRisk.CAUTION:
-        console.print(f"[yellow][AUTO-APPROVED for agent] {command}[/yellow]")
+        require_confirmation = get_agent_require_confirmation()
+        
+        if require_confirmation:
+            console.print(Panel(
+                Text.from_markup(f"[bold yellow]CAUTION:[/bold yellow] {CommandSafety.get_risk_description(risk)}\n[dim]Command: {command}[/dim]"),
+                title="[bold yellow]Agent Mode - Confirmation Required[/bold yellow]",
+                border_style="yellow"
+            ))
+            confirm = safe_input("\033[33mAllow agent to execute? [y/N]\033[0m ")
+            if confirm.lower() != 'y':
+                console.print("[yellow]User rejected command in agent mode[/yellow]")
+                return ExecutionResult(exit_code=-1, output="USER_REJECTED: User declined to execute CAUTION command", interrupted=False)
+            console.print(f"[yellow][USER-APPROVED for agent] {command}[/yellow]")
+        else:
+            console.print(f"[yellow][AUTO-APPROVED for agent] {command}[/yellow]")
 
     if risk == CommandRisk.SAFE:
         console.print(f"[cyan][SAFE] {command}[/cyan]")
