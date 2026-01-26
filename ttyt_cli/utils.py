@@ -71,6 +71,7 @@ def show_help():
         '<style color="#89b4fa">/new</style>       Start a new session\n'
         '<style color="#89b4fa">/uninstall</style> Remove configuration\n'
         '<style color="#89b4fa">/ask</style>       Ask a question (no command execution)\n'
+        '<style color="#89b4fa">/agent</style>     Agentic mode - retry until goal achieved\n'
         '<style color="#89b4fa">/help</style>      Show this help\n'
         '<style color="#89b4fa">/cmd</style>       Run command directly\n'
         '\n'

@@ -17,6 +17,7 @@ COMMANDS = {
     "/new": "Start a new session",
     "/uninstall": "Remove ttyt configuration",
     "/ask": "Ask a question (no command execution)",
+    "/agent": "Agentic mode - retry until goal achieved",
     "/help": "Show help and command safety info",
 }
 

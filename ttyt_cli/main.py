@@ -8,7 +8,7 @@ except ImportError:
 
 from .utils import exit_handler, show_help, is_natural_language, GoBackException, safe_input
 from .config import load_env, setup_provider, get_current_provider, select_model, setup_api_keys, ENV_PATH
-from .core import get_command, get_answer, execute_command_with_safety
+from .core import get_command, get_answer, execute_command_with_safety, run_agentic_loop
 from .history import clear_history
 from .terminal_ui import TerminalUI
 
@@ -81,6 +81,15 @@ def main():
                     continue
                 answer = get_answer(provider, question, cwd)
                 ui.print_message(answer)
+                continue
+
+            if user_input.startswith("/agent"):
+                goal = user_input[6:].strip()
+                if not goal:
+                    goal = safe_input("Goal: ")
+                if not goal:
+                    continue
+                run_agentic_loop(provider, goal, cwd)
                 continue
             
             if user_input.startswith("/"):
