@@ -11,7 +11,7 @@ from rich.live import Live
 from rich.text import Text
 from .safety import CommandSafety, CommandRisk
 from .history import add_to_history, add_chat_to_history, format_history
-from .utils import safe_input, is_esc_pressed, GoBackException, to_posix_path, get_bash_path, from_posix_path
+from .utils import safe_input, is_esc_pressed, GoBackException, to_posix_path, get_bash_path, from_posix_path, get_os_info, kill_process_tree
 from .project_context import get_context_for_prompt
 from .config import get_agent_require_confirmation
 
@@ -22,11 +22,11 @@ class ExecutionResult(NamedTuple):
     output: str
     interrupted: bool = False
 
-def interruptible_generate(provider, user_input, cwd, history_context, project_context=""):
+def interruptible_generate(provider, user_input, cwd, history_context, os_name, project_context=""):
     result: dict[str, Any] = {"command": None, "error": None}
     def target():
         try:
-            result["command"] = provider.generate_command(user_input, cwd, history_context, project_context)
+            result["command"] = provider.generate_command(user_input, cwd, history_context, os_name, project_context)
         except Exception as e:
             result["error"] = str(e)
 
@@ -49,11 +49,11 @@ def interruptible_generate(provider, user_input, cwd, history_context, project_c
     
     return result["command"] or ""
 
-def interruptible_answer(provider, user_input, cwd, history_context):
+def interruptible_answer(provider, user_input, cwd, history_context, os_name):
     result: dict[str, Any] = {"answer": None, "error": None}
     def target():
         try:
-            result["answer"] = provider.generate_answer(user_input, cwd, history_context)
+            result["answer"] = provider.generate_answer(user_input, cwd, history_context, os_name)
         except Exception as e:
             result["error"] = str(e)
 
@@ -76,11 +76,11 @@ def interruptible_answer(provider, user_input, cwd, history_context):
 
     return result["answer"] or ""
 
-def interruptible_fix_command(provider, goal: str, failed_command: str, error_output: str, cwd: str, history_context: str, project_context: str = "", exploration_output: str = ""):
+def interruptible_fix_command(provider, goal: str, failed_command: str, error_output: str, cwd: str, history_context: str, os_name: str, project_context: str = "", exploration_output: str = ""):
     result: dict[str, Any] = {"command": None, "error": None}
     def target():
         try:
-            result["command"] = provider.generate_fix_command(goal, failed_command, error_output, cwd, history_context, project_context, exploration_output)
+            result["command"] = provider.generate_fix_command(goal, failed_command, error_output, cwd, history_context, os_name, project_context, exploration_output)
         except Exception as e:
             result["error"] = str(e)
 
@@ -103,11 +103,11 @@ def interruptible_fix_command(provider, goal: str, failed_command: str, error_ou
     
     return result["command"] or ""
 
-def interruptible_exploration(provider, goal: str, failed_command: str, error_output: str, cwd: str) -> Optional[str]:
+def interruptible_exploration(provider, goal: str, failed_command: str, error_output: str, cwd: str, os_name: str) -> Optional[str]:
     result: dict[str, Any] = {"command": None, "error": None}
     def target():
         try:
-            result["command"] = provider.suggest_exploration_command(goal, failed_command, error_output, cwd)
+            result["command"] = provider.suggest_exploration_command(goal, failed_command, error_output, cwd, os_name)
         except Exception as e:
             result["error"] = str(e)
 
@@ -132,10 +132,11 @@ def interruptible_exploration(provider, goal: str, failed_command: str, error_ou
 
 def get_command(provider, user_input: str, cwd: str) -> str:
     cwd_posix = to_posix_path(cwd)
+    os_name = get_os_info()
     history_context = format_history()
     project_context = get_context_for_prompt(cwd, user_input)
     try:
-        return interruptible_generate(provider, user_input, cwd_posix, history_context, project_context)
+        return interruptible_generate(provider, user_input, cwd_posix, history_context, os_name, project_context)
     except GoBackException:
         raise
     except Exception as e:
@@ -143,9 +144,10 @@ def get_command(provider, user_input: str, cwd: str) -> str:
 
 def get_answer(provider, user_input: str, cwd: str) -> str:
     cwd_posix = to_posix_path(cwd)
+    os_name = get_os_info()
     history_context = format_history()
     try:
-        answer = interruptible_answer(provider, user_input, cwd_posix, history_context)
+        answer = interruptible_answer(provider, user_input, cwd_posix, history_context, os_name)
         add_chat_to_history(user_input, answer)
         return answer
     except GoBackException:
@@ -155,25 +157,29 @@ def get_answer(provider, user_input: str, cwd: str) -> str:
 
 def execute_with_streaming(command: str) -> ExecutionResult:
     bash_path = get_bash_path()
+    is_windows = platform.system() == "Windows"
+
+    popen_kwargs = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+        "bufsize": 1,
+        "universal_newlines": True
+    }
+    
+    if not is_windows:
+        popen_kwargs["preexec_fn"] = os.setsid
 
     try:
         process = subprocess.Popen(
             [bash_path, "-c", command],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            universal_newlines=True
+            **popen_kwargs
         )
     except FileNotFoundError:
         process = subprocess.Popen(
             command,
             shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            universal_newlines=True
+            **popen_kwargs
         )
 
     output_full: List[str] = []
@@ -207,8 +213,7 @@ def execute_with_streaming(command: str) -> ExecutionResult:
         while process.poll() is None:
             if was_interrupted or is_esc_pressed():
                 console.print("\n[red][CTRL+C] Stopping process...[/red]")
-                subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)], 
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                kill_process_tree(process.pid)
                 process.terminate()
                 was_interrupted = True
                 break
@@ -389,9 +394,9 @@ def run_agentic_loop(provider, goal: str, cwd: str) -> bool:
         console.print(f"\n[bold cyan]Attempt {attempt}/{MAX_AGENT_ITERATIONS}[/bold cyan]")
         
         if attempt == 1:
-            command = interruptible_generate(provider, goal, cwd_posix, history_context, project_context)
+            command = interruptible_generate(provider, goal, cwd_posix, history_context, os_name, project_context)
         else:
-            explore_cmd = interruptible_exploration(provider, goal, last_command, last_output, cwd_posix)
+            explore_cmd = interruptible_exploration(provider, goal, last_command, last_output, cwd_posix, os_name)
             
             if explore_cmd:
                 console.print(f"[dim]Exploring:[/dim] {explore_cmd}")
@@ -407,6 +412,7 @@ def run_agentic_loop(provider, goal: str, cwd: str) -> bool:
                 last_output,
                 cwd_posix,
                 history_context,
+                os_name,
                 project_context,
                 exploration_output
             )
@@ -425,7 +431,7 @@ def run_agentic_loop(provider, goal: str, cwd: str) -> bool:
             console.print("[yellow]Interrupted by user[/yellow]")
             return False
         
-        success, explanation = provider.check_goal_achieved(goal, command, result.output, result.exit_code)
+        success, explanation = provider.check_goal_achieved(goal, command, result.output, result.exit_code, os_name)
         
         if success and result.exit_code == 0:
             console.print(Panel(

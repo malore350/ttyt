@@ -6,7 +6,7 @@ try:
 except ImportError:
     colorama = None
 
-from .utils import exit_handler, show_help, is_natural_language, GoBackException, safe_input
+from .utils import exit_handler, show_help, is_natural_language, GoBackException, safe_input, clear_screen
 from .config import load_env, setup_provider, get_current_provider, select_model, setup_api_keys, ENV_PATH
 from .core import get_command, get_answer, execute_command_with_safety, run_agentic_loop
 from .history import clear_history
@@ -60,7 +60,7 @@ def main():
                 continue
             
             if user_input == "/new":
-                os.system('cls' if os.name == 'nt' else 'clear')
+                clear_screen()
                 clear_history()
                 ui.print_welcome(provider)
                 continue

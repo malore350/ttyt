@@ -1,7 +1,8 @@
 import sys
-import msvcrt
 import os
 import re
+import platform
+import signal
 from typing import Optional
 from prompt_toolkit import prompt
 from prompt_toolkit.key_binding import KeyBindings
@@ -9,12 +10,30 @@ from prompt_toolkit.formatted_text import ANSI, HTML
 from .dialogs import show_message
 from .styles import get_ttyt_style
 
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
+
 class GoBackException(Exception):
     pass
+
+def get_os_info() -> str:
+    system = platform.system()
+    if system == "Windows":
+        return "Windows (Git Bash)"
+    elif system == "Darwin":
+        return "macOS"
+    elif system == "Linux":
+        return "Linux"
+    return system
 
 def to_posix_path(path: str) -> str:
     if not path:
         return path
+    
+    if platform.system() != "Windows":
+        return path.replace('\\', '/')
     
     path = path.replace('\\', '/')
     
@@ -31,6 +50,9 @@ def from_posix_path(path: str) -> str:
     if not path:
         return path
         
+    if platform.system() != "Windows":
+        return path
+        
     if path.startswith('/') and len(path) >= 3 and path[1].isalpha() and (path[2] == '/' or len(path) == 2):
         drive_letter = path[1].upper()
         suffix = path[2:] if len(path) > 2 else ""
@@ -41,6 +63,9 @@ def from_posix_path(path: str) -> str:
     return os.path.expanduser(path)
 
 def get_bash_path() -> str:
+    if platform.system() != "Windows":
+        return "bash"
+        
     paths = [
         r"C:\Program Files\Git\bin\bash.exe",
         r"C:\Program Files (x86)\Git\bin\bash.exe",
@@ -53,10 +78,35 @@ def get_bash_path() -> str:
             
     return "bash"
 
+def kill_process_tree(pid: int):
+    if platform.system() == "Windows":
+        import subprocess
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], 
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+def clear_screen():
+    if platform.system() == "Windows":
+        os.system('cls')
+    else:
+        os.system('clear')
+
 def exit_handler(sig, frame):
     print("\n\033[31mExiting...\033[0m")
     sys.exit(0)
 
+def is_ctrl_pressed() -> bool:
+    if platform.system() != "Windows":
+        return False
+    try:
+        import ctypes
+        return (ctypes.windll.user32.GetAsyncKeyState(0x11) & 0x8000) != 0
+    except Exception:
+        return False
 
 def safe_input(text: str) -> str:
     kb = KeyBindings()
@@ -68,22 +118,11 @@ def safe_input(text: str) -> str:
     @kb.add('backspace')
     def _(event):
         buffer = event.current_buffer
-        # Check if Ctrl is pressed (Windows workaround for Ctrl+Backspace)
-        is_ctrl = False
-        try:
-            import ctypes
-            # 0x11 is VK_CONTROL
-            is_ctrl = (ctypes.windll.user32.GetAsyncKeyState(0x11) & 0x8000) != 0
-        except Exception:
-            pass
-
-        if is_ctrl:
-            # Ctrl+Backspace behavior
+        if is_ctrl_pressed():
             pos = buffer.document.find_start_of_previous_word(count=1)
             if pos:
                 buffer.delete_before_cursor(count=-pos)
         else:
-            # Normal Backspace behavior
             buffer.delete_before_cursor(count=1)
 
     @kb.add('c-w')
@@ -102,7 +141,9 @@ def safe_input(text: str) -> str:
         raise KeyboardInterrupt()
 
 def is_esc_pressed():
-    while msvcrt.kbhit():
+    if not msvcrt:
+        return False
+    if msvcrt.kbhit():
         if msvcrt.getch() == b'\x1b':
             return True
     return False
@@ -148,3 +189,4 @@ def is_natural_language(text: str) -> bool:
     if text_lower in shell_commands:
         return False
     return not any(text_lower.startswith(s.lower()) for s in shell_starters)
+

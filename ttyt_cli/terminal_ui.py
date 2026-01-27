@@ -11,6 +11,8 @@ from prompt_toolkit.filters import Condition, has_completions
 from prompt_toolkit.application import get_app
 from prompt_toolkit.shortcuts import print_formatted_text
 
+from .utils import is_ctrl_pressed
+
 COMMANDS = {
     "/api": "Set/update AI provider API keys",
     "/models": "Switch AI provider or model",
@@ -61,22 +63,11 @@ class TerminalUI:
         @kb.add('backspace')
         def _(event):
             buffer = event.current_buffer
-            # Check if Ctrl is pressed (Windows workaround for Ctrl+Backspace)
-            is_ctrl = False
-            try:
-                import ctypes
-                # 0x11 is VK_CONTROL
-                is_ctrl = (ctypes.windll.user32.GetAsyncKeyState(0x11) & 0x8000) != 0
-            except Exception:
-                pass
-
-            if is_ctrl:
-                # Ctrl+Backspace behavior: delete word
+            if is_ctrl_pressed():
                 pos = buffer.document.find_start_of_previous_word(count=1)
                 if pos:
                     buffer.delete_before_cursor(count=-pos)
             else:
-                # Normal Backspace behavior: delete char
                 buffer.delete_before_cursor(count=1)
                 
             if buffer.completer and buffer.text.startswith('/'):
