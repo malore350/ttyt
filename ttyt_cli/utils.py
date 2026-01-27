@@ -1,5 +1,8 @@
 import sys
 import msvcrt
+import os
+import re
+from typing import Optional
 from prompt_toolkit import prompt
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.formatted_text import ANSI, HTML
@@ -8,6 +11,47 @@ from .styles import get_ttyt_style
 
 class GoBackException(Exception):
     pass
+
+def to_posix_path(path: str) -> str:
+    if not path:
+        return path
+    
+    path = path.replace('\\', '/')
+    
+    drive_match = re.match(r'^([a-zA-Z]):/', path)
+    if drive_match:
+        drive_letter = drive_match.group(1).lower()
+        path = f"/{drive_letter}{path[2:]}"
+    elif re.match(r'^([a-zA-Z]):$', path):
+        path = f"/{path[0].lower()}"
+        
+    return path
+
+def from_posix_path(path: str) -> str:
+    if not path:
+        return path
+        
+    if path.startswith('/') and len(path) >= 3 and path[1].isalpha() and (path[2] == '/' or len(path) == 2):
+        drive_letter = path[1].upper()
+        suffix = path[2:] if len(path) > 2 else ""
+        if suffix == "/":
+            suffix = ""
+        path = f"{drive_letter}:{suffix}"
+    
+    return os.path.expanduser(path)
+
+def get_bash_path() -> str:
+    paths = [
+        r"C:\Program Files\Git\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\bin\bash.exe",
+        os.path.expanduser(r"~\AppData\Local\Programs\Git\bin\bash.exe"),
+    ]
+    
+    for p in paths:
+        if os.path.exists(p):
+            return p
+            
+    return "bash"
 
 def exit_handler(sig, frame):
     print("\n\033[31mExiting...\033[0m")

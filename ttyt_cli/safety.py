@@ -25,7 +25,7 @@ class CommandSafety:
         "grep", "egrep", "fgrep", "find", "locate", "which", "whereis",
         "head", "tail", "less", "more", "wc", "sort", "uniq", "du", "df",
         "ps", "top", "free", "id", "groups", "env", "printenv",
-        "git",  # Will be refined in categorization
+        "git",
         "python", "python3", "node", "java", "go", "rustc", "ruby", "perl",
         "awk", "sed", "bc", "expr",
         "cd", "dir", "type",
@@ -33,7 +33,7 @@ class CommandSafety:
         "md5sum", "sha1sum", "sha256sum", "base64", "strings",
         "uname", "history", "echo", "clear", "man", "help",
         "tasklist", "ipconfig", "systeminfo", "netstat", "findstr", "attrib", "where",
-        "ll", "la", "l",
+        "ll", "la", "l", "winpty",
     }
 
     # Git commands that are always safe
@@ -65,6 +65,9 @@ class CommandSafety:
         r'\$\(',
         r'`',
         r'sudo',
+        r'powershell',
+        r'cmd',
+        r'msys_no_pathconv',
     ]
     
     # Chain operators that require splitting and individual analysis
@@ -132,21 +135,22 @@ class CommandSafety:
 
     @classmethod
     def _classify_single(cls, command: str) -> CommandRisk:
-        """Classify a single command (no chain operators)."""
         if not command or not command.strip():
             return CommandRisk.CAUTION
 
         cmd_lower = command.strip().lower()
 
-        # Special handling for taskkill - check if it's targeting specific PID vs image name
+        if cmd_lower.startswith("winpty "):
+            return cls._classify_single(command.strip()[7:])
+
+        if cmd_lower.startswith("msys_no_pathconv=1 "):
+            return cls._classify_single(command.strip()[19:])
+
         if cmd_lower.startswith("taskkill"):
-            # taskkill with /IM (image name) is dangerous - can kill multiple processes
-            if "/im" in cmd_lower.lower():
+            if "/im" in cmd_lower or "//im" in cmd_lower:
                 return CommandRisk.DANGER
-            # taskkill with /PID (specific process ID) is caution - user is targeting specific process
-            elif "/pid" in cmd_lower.lower():
+            elif "/pid" in cmd_lower or "//pid" in cmd_lower:
                 return CommandRisk.CAUTION
-            # taskkill without clear targeting is dangerous
             else:
                 return CommandRisk.DANGER
 

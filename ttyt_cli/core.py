@@ -11,7 +11,7 @@ from rich.live import Live
 from rich.text import Text
 from .safety import CommandSafety, CommandRisk
 from .history import add_to_history, add_chat_to_history, format_history
-from .utils import safe_input, is_esc_pressed, GoBackException
+from .utils import safe_input, is_esc_pressed, GoBackException, to_posix_path, get_bash_path, from_posix_path
 from .project_context import get_context_for_prompt
 from .config import get_agent_require_confirmation
 
@@ -131,19 +131,21 @@ def interruptible_exploration(provider, goal: str, failed_command: str, error_ou
     return result["command"]
 
 def get_command(provider, user_input: str, cwd: str) -> str:
+    cwd_posix = to_posix_path(cwd)
     history_context = format_history()
     project_context = get_context_for_prompt(cwd, user_input)
     try:
-        return interruptible_generate(provider, user_input, cwd, history_context, project_context)
+        return interruptible_generate(provider, user_input, cwd_posix, history_context, project_context)
     except GoBackException:
         raise
     except Exception as e:
         return f"echo AI Error: {e}"
 
 def get_answer(provider, user_input: str, cwd: str) -> str:
+    cwd_posix = to_posix_path(cwd)
     history_context = format_history()
     try:
-        answer = interruptible_answer(provider, user_input, cwd, history_context)
+        answer = interruptible_answer(provider, user_input, cwd_posix, history_context)
         add_chat_to_history(user_input, answer)
         return answer
     except GoBackException:
@@ -152,9 +154,7 @@ def get_answer(provider, user_input: str, cwd: str) -> str:
         return f"AI Error: {e}"
 
 def execute_with_streaming(command: str) -> ExecutionResult:
-    bash_path = r"C:\Program Files\Git\bin\bash.exe"
-    if not os.path.exists(bash_path):
-        bash_path = "bash"
+    bash_path = get_bash_path()
 
     try:
         process = subprocess.Popen(
@@ -293,10 +293,7 @@ def execute_command_with_safety(command: str) -> bool:
             if len(parts) > 1:
                 path = parts[1]
             
-            if path.startswith('/') and len(path) >= 3 and path[1].isalpha() and path[2] == '/':
-                path = f"{path[1]}:{path[2:]}"
-            
-            path = os.path.expanduser(path)
+            path = from_posix_path(path)
             try:
                 os.chdir(path)
             except Exception as e:
@@ -357,10 +354,7 @@ def execute_for_agent(command: str) -> Optional[ExecutionResult]:
             if len(parts) > 1:
                 path = parts[1]
             
-            if path.startswith('/') and len(path) >= 3 and path[1].isalpha() and path[2] == '/':
-                path = f"{path[1]}:{path[2:]}"
-            
-            path = os.path.expanduser(path)
+            path = from_posix_path(path)
             try:
                 os.chdir(path)
                 return ExecutionResult(exit_code=0, output=f"Changed directory to {path}", interrupted=False)
@@ -375,6 +369,7 @@ def execute_for_agent(command: str) -> Optional[ExecutionResult]:
 MAX_AGENT_ITERATIONS = 3
 
 def run_agentic_loop(provider, goal: str, cwd: str) -> bool:
+    cwd_posix = to_posix_path(cwd)
     history_context = format_history()
     project_context = get_context_for_prompt(cwd, goal)
     last_command: str = ""
@@ -394,9 +389,9 @@ def run_agentic_loop(provider, goal: str, cwd: str) -> bool:
         console.print(f"\n[bold cyan]Attempt {attempt}/{MAX_AGENT_ITERATIONS}[/bold cyan]")
         
         if attempt == 1:
-            command = interruptible_generate(provider, goal, cwd, history_context, project_context)
+            command = interruptible_generate(provider, goal, cwd_posix, history_context, project_context)
         else:
-            explore_cmd = interruptible_exploration(provider, goal, last_command, last_output, cwd)
+            explore_cmd = interruptible_exploration(provider, goal, last_command, last_output, cwd_posix)
             
             if explore_cmd:
                 console.print(f"[dim]Exploring:[/dim] {explore_cmd}")
@@ -410,7 +405,7 @@ def run_agentic_loop(provider, goal: str, cwd: str) -> bool:
                 goal,
                 last_command,
                 last_output,
-                cwd,
+                cwd_posix,
                 history_context,
                 project_context,
                 exploration_output

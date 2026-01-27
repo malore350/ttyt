@@ -2,7 +2,7 @@ import os
 import json
 from typing import Optional, Dict, List
 from dataclasses import dataclass
-
+from .utils import to_posix_path
 
 @dataclass
 class ProjectContext:
@@ -13,7 +13,7 @@ class ProjectContext:
     
     def format_for_prompt(self) -> str:
         lines = [f"Project type: {self.project_type}"]
-        lines.append(f"Config file: {self.config_file}")
+        lines.append(f"Config file: {to_posix_path(self.config_file)}")
         
         if self.available_scripts:
             lines.append("Available scripts/commands:")
@@ -205,7 +205,7 @@ def get_context_for_prompt(cwd: str, user_input: str) -> str:
         context_parts.append(project_ctx.format_for_prompt())
         
         if is_ambiguous_request(user_input):
-            context_parts.append(f"\nConfig file content ({project_ctx.config_file}):")
+            context_parts.append(f"\nConfig file content ({to_posix_path(project_ctx.config_file)}):")
             context_parts.append(project_ctx.config_content)
     elif is_ambiguous_request(user_input):
         context_parts.append("No recognized project config found.")

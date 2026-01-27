@@ -1,6 +1,13 @@
 import os
 from typing import Optional, Tuple
 from .base import AIProvider
+from ..prompts import (
+    get_system_command_prompt,
+    get_system_answer_prompt,
+    get_system_goal_prompt,
+    get_system_fix_prompt,
+    get_system_explore_prompt
+)
 
 class GeminiProvider(AIProvider):
     def __init__(self, api_key: str, model_name: Optional[str] = None):
@@ -14,29 +21,68 @@ class GeminiProvider(AIProvider):
     def generate_command(self, user_input: str, cwd: str, history_context: str, project_context: str = "") -> str:
         project_info = ""
         if project_context:
-            project_info = f"""
-Project information:
-{project_context}
+            project_info = f"Project information:\n{project_context}\n"
+        
+        prompt = get_system_command_prompt(cwd, history_context, project_info)
+        prompt += f"\nUser request: {user_input}"
+        
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt
+        )
+        return (response.text or "").strip()
 
-"""
-        prompt = f"""You are a shell command translator for Git Bash (Unix-style shell on Windows). 
-Convert the user's request into a standard Bash command.
-Current directory: {cwd}
-{project_info}
-Recent command history:
-{history_context}
+    def check_goal_achieved(self, goal: str, command: str, output: str, exit_code: int) -> Tuple[bool, str]:
+        output_truncated = output[-2000:] if len(output) > 2000 else output
+        prompt = get_system_goal_prompt(goal, command, output_truncated, exit_code)
 
-Rules:
-- Output ONLY the command, nothing else
-- No explanations, no markdown, no backticks
-- If project context shows available scripts, use them (e.g., npm run <script>, make <target>)
-- If unclear, make a reasonable assumption
-- Use ONLY Git Bash compatible commands.
-- AVOID Linux-only commands (e.g., pgrep, ps -ef, htop, ssh-copy-id).
-- For process listing, use 'tasklist | grep <name>'.
-- For killing processes, use 'taskkill //F //PID <pid>'.
-- Use forward slashes (/) for paths.
-- User request: {user_input}"""
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt
+        )
+        result = (response.text or "").strip()
+        
+        if result.upper().startswith("SUCCESS"):
+            return (True, result[8:].strip() if len(result) > 8 else "Goal achieved")
+        return (False, result[8:].strip() if result.upper().startswith("FAILURE") and len(result) > 8 else result)
+
+    def generate_fix_command(self, goal: str, failed_command: str, error_output: str, cwd: str, history_context: str, project_context: str = "", exploration_output: str = "") -> str:
+        error_truncated = error_output[-1500:] if len(error_output) > 1500 else error_output
+        
+        project_info = ""
+        if project_context:
+            project_info = f"Project information:\n{project_context}\n"
+            
+        exploration_info = ""
+        if exploration_output:
+            exploration_info = f"Exploration output (from investigating the error):\n{exploration_output[-1500:] if len(exploration_output) > 1500 else exploration_output}\n"
+            
+        prompt = get_system_fix_prompt(goal, failed_command, error_truncated, cwd, history_context, project_info, exploration_info)
+
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt
+        )
+        return (response.text or "").strip()
+
+    def suggest_exploration_command(self, goal: str, failed_command: str, error_output: str, cwd: str) -> Optional[str]:
+        error_truncated = error_output[-1000:] if len(error_output) > 1000 else error_output
+        prompt = get_system_explore_prompt(goal, failed_command, error_truncated, cwd)
+
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt
+        )
+        result = (response.text or "").strip()
+        
+        if result.upper() == "NONE" or not result:
+            return None
+        return result
+
+    def generate_answer(self, user_input: str, cwd: str, history_context: str) -> str:
+        prompt = get_system_answer_prompt(cwd, history_context)
+        prompt += f"\nUser question: {user_input}"
+        
         response = self.client.models.generate_content(
             model=self.model_name,
             contents=prompt
@@ -110,6 +156,7 @@ Rules:
 - Use the exploration output to make an informed fix
 - If project context shows available scripts, use them
 - Use Git Bash compatible commands
+- NEVER use 'powershell' or 'cmd' wrappers or commands.
 - Use forward slashes (/) for paths"""
 
         response = self.client.models.generate_content(
@@ -135,6 +182,7 @@ If no exploration is needed (error is clear enough), respond with exactly: NONE
 
 Rules:
 - Only suggest READ-ONLY commands (ls, cat, head, tail, find, pwd, which, type, file, etc.)
+- NEVER use 'powershell' or 'cmd' wrappers or commands.
 - NEVER suggest commands that modify anything
 - Output ONLY the command or NONE, nothing else
 - No explanations, no markdown, no backticks"""
