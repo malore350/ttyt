@@ -376,6 +376,7 @@ MAX_AGENT_ITERATIONS = 3
 
 def run_agentic_loop(provider, goal: str, cwd: str) -> bool:
     cwd_posix = to_posix_path(cwd)
+    os_name = get_os_info()
     history_context = format_history()
     project_context = get_context_for_prompt(cwd, goal)
     last_command: str = ""
