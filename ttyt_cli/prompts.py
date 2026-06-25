@@ -45,8 +45,24 @@ macOS (BSD) Knowledge:
 - Permissions: Visible via 'ls -le' (ACLs) or 'ls -l@' (Extended Attributes).
 """
 
+WSL_KNOWLEDGE = """
+WSL (Windows Subsystem for Linux) Knowledge:
+- Shell: Bash (Linux). Running on WSL.
+- Paths: Standard Linux paths (/home/user/...). Access Windows drives via /mnt/c/, /mnt/d/.
+- Path Conversion: Use 'wslpath -w <linux_path>' for Windows path, 'wslpath -u <win_path>' for Linux path.
+- Windows Interop: Run Windows binaries (explorer.exe, code, powershell.exe) directly from WSL.
+- File Manager: Use 'explorer.exe .' to open current directory in Windows Explorer.
+- VS Code: Use 'code .' to open project in VS Code on Windows.
+- PowerShell: Available via 'powershell.exe'.
+- Package Management: Standard Linux (apt, etc.).
+- Process Management: Standard Linux tools (ps, kill, etc.). Windows processes visible via /proc.
+- Note: Some system tools (systemctl, udev) may not work in WSL.
+"""
+
 def get_os_knowledge(os_name: str) -> str:
-    if "Windows" in os_name:
+    if "WSL" in os_name:
+        return WSL_KNOWLEDGE
+    elif "Windows" in os_name:
         return WINDOWS_KNOWLEDGE
     elif "macOS" in os_name:
         return MACOS_KNOWLEDGE
@@ -104,7 +120,13 @@ FAILURE: <brief explanation of what went wrong>
 
 Rules:
 - Exit code 0 usually means success, but check if output matches goal.
-- Exit code non-zero usually means failure.
+- CRITICAL: For discovery/lookup commands (lsof, grep, find, which, locate, netstat, ss),
+  exit code 1 means "nothing found" — this IS a valid answer, not an error.
+  If the goal asks "what", "find", "list", "check", or "show me what" about something,
+  and the command finds nothing, you MUST respond: SUCCESS: Nothing was found.
+  Do NOT call this a failure — "nothing found" is the honest, correct answer.
+- Only for modification/action commands (rm, mv, cp, git, npm, pip, etc.),
+  exit code non-zero truly means failure.
 - Be concise (1 sentence).
 """
 

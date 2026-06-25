@@ -12,6 +12,7 @@ from prompt_toolkit.application import get_app
 from prompt_toolkit.shortcuts import print_formatted_text
 
 from .utils import is_ctrl_pressed
+from .config import get_trust_level
 
 COMMANDS = {
     "/api": "Set/update AI provider API keys",
@@ -21,7 +22,12 @@ COMMANDS = {
     "/uninstall": "Remove ttyt configuration",
     "/ask": "Ask a question (no command execution)",
     "/agent": "Agentic mode - retry until goal achieved",
+    "/cmd": "Run a shell command directly (bypass AI)",
+    "/clear": "Clear the screen",
+    "/exit": "Exit ttyt",
+    "/status": "Show current status",
     "/help": "Show help and command safety info",
+    "/history": "Show command history",
 }
 
 class TerminalUI:
@@ -31,12 +37,19 @@ class TerminalUI:
         self.current_provider = None
 
     def _create_session(self):
+        from prompt_toolkit.history import InMemoryHistory
+        from .history import command_history
+
         completer = WordCompleter(
             list(COMMANDS.keys()), 
             meta_dict=COMMANDS,
             ignore_case=True, 
             sentence=True
         )
+
+        history = InMemoryHistory()
+        for entry in command_history:
+            history.append_string(entry.get("command", ""))
 
         @Condition
         def is_command():
@@ -84,6 +97,7 @@ class TerminalUI:
                 buffer.start_completion(select_first=False)
 
         return PromptSession(
+            history=history,
             completer=completer,
             complete_while_typing=is_command,
             key_bindings=kb,
@@ -98,12 +112,15 @@ class TerminalUI:
         provider_key = os.getenv('AI_PROVIDER', 'Unknown')
         provider_name = "GOOGLE" if provider_key == "gemini" else provider_key.upper()
         model_name = getattr(self.current_provider, 'model_name', 'Unknown')
+        trust_level = get_trust_level().value
         
         return HTML(
             f'<toolbar>'
             f'<toolbar_label>PROVIDER:</toolbar_label> <toolbar_value>{provider_name}</toolbar_value> '
             f'<toolbar_dim>|</toolbar_dim> '
             f'<toolbar_label>MODEL:</toolbar_label> <toolbar_value>{model_name}</toolbar_value> '
+            f'<toolbar_dim>|</toolbar_dim> '
+            f'<toolbar_label>TRUST:</toolbar_label> <toolbar_value>{trust_level}</toolbar_value> '
             f'<toolbar_dim>ESC to clear • /help</toolbar_dim>'
             f'</toolbar>'
         )

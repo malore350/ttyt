@@ -172,14 +172,14 @@ You can customize `ttyt` behavior by adding these variables to `~/.ttyt/.env`:
 | Variable | Values | Default | Description |
 |----------|--------|---------|-------------|
 | `AI_PROVIDER` | `gemini`, `zai`, `openrouter` | `gemini` | AI provider to use |
-| `GEMINI_MODEL` | `gemini-2.5-flash`, etc. | `gemini-2.5-flash` | Gemini model selection |
+| `GEMINI_MODEL` | `gemini-2.5-flash-lite`, etc. | `gemini-2.5-flash-lite` | Gemini model selection |
 | `AGENT_REQUIRE_CONFIRMATION` | `true`, `false` | `false` | Require confirmation for CAUTION commands in agent mode |
 
 **Example `.env` file:**
 ```bash
 AI_PROVIDER=gemini
 GEMINI_API_KEY=your_key_here
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-2.5-flash-lite
 AGENT_REQUIRE_CONFIRMATION=false
 ```
 

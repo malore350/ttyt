@@ -1,6 +1,6 @@
-google-genai
-colorama
-zai-sdk
-openai
-prompt_toolkit
-rich
+google-genai>=1.0.0
+colorama>=0.4.6
+zai-sdk>=0.1.0
+openai>=1.0.0
+prompt_toolkit>=3.0.0
+rich>=13.0.0

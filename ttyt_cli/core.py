@@ -8,13 +8,14 @@ import shlex
 from typing import Any, List, Tuple, NamedTuple, Optional
 from rich.console import Console
 from rich.panel import Panel
-from rich.live import Live
 from rich.text import Text
 from .safety import CommandSafety, CommandRisk
 from .history import add_to_history, add_chat_to_history, format_history
-from .utils import safe_input, is_esc_pressed, GoBackException, to_posix_path, get_bash_path, from_posix_path, get_os_info, kill_process_tree
+from .utils import safe_input, is_cancel_pressed, GoBackException, to_posix_path, get_bash_path, from_posix_path, get_os_info, kill_process_tree
 from .project_context import get_context_for_prompt
-from .config import get_agent_require_confirmation
+from .trust import TrustLevel
+from .policy import get_confirmation_policy, ConfirmationAction
+from . import llm_wrapper
 
 console = Console()
 
@@ -23,121 +24,13 @@ class ExecutionResult(NamedTuple):
     output: str
     interrupted: bool = False
 
-def interruptible_generate(provider, user_input, cwd, history_context, os_name, project_context=""):
-    result: dict[str, Any] = {"command": None, "error": None}
-    def target():
-        try:
-            result["command"] = provider.generate_command(user_input, cwd, history_context, os_name, project_context)
-        except Exception as e:
-            result["error"] = str(e)
-
-    thread = threading.Thread(target=target)
-    thread.daemon = True
-    thread.start()
-
-    with Live(Text("Thinking...", style="cyan"), refresh_per_second=10) as live:
-        while thread.is_alive():
-            if is_esc_pressed():
-                live.update(Text("Cancelled.", style="red"))
-                raise GoBackException()
-            time.sleep(0.02)
-        
-        if result["error"]:
-            live.update(Text(f"Error: {result['error']}", style="red"))
-            raise Exception(result["error"])
-        
-        live.update(Text(""))
-    
-    return result["command"] or ""
-
-def interruptible_answer(provider, user_input, cwd, history_context, os_name):
-    result: dict[str, Any] = {"answer": None, "error": None}
-    def target():
-        try:
-            result["answer"] = provider.generate_answer(user_input, cwd, history_context, os_name)
-        except Exception as e:
-            result["error"] = str(e)
-
-    thread = threading.Thread(target=target)
-    thread.daemon = True
-    thread.start()
-
-    with Live(Text("Thinking...", style="cyan"), refresh_per_second=10) as live:
-        while thread.is_alive():
-            if is_esc_pressed():
-                live.update(Text("Cancelled.", style="red"))
-                raise GoBackException()
-            time.sleep(0.02)
-
-        if result["error"]:
-            live.update(Text(f"Error: {result['error']}", style="red"))
-            raise Exception(result["error"])
-
-        live.update(Text(""))
-
-    return result["answer"] or ""
-
-def interruptible_fix_command(provider, goal: str, failed_command: str, error_output: str, cwd: str, history_context: str, os_name: str, project_context: str = "", exploration_output: str = ""):
-    result: dict[str, Any] = {"command": None, "error": None}
-    def target():
-        try:
-            result["command"] = provider.generate_fix_command(goal, failed_command, error_output, cwd, history_context, os_name, project_context, exploration_output)
-        except Exception as e:
-            result["error"] = str(e)
-
-    thread = threading.Thread(target=target)
-    thread.daemon = True
-    thread.start()
-
-    with Live(Text("Generating fix...", style="cyan"), refresh_per_second=10) as live:
-        while thread.is_alive():
-            if is_esc_pressed():
-                live.update(Text("Cancelled.", style="red"))
-                raise GoBackException()
-            time.sleep(0.02)
-        
-        if result["error"]:
-            live.update(Text(f"Error: {result['error']}", style="red"))
-            raise Exception(result["error"])
-        
-        live.update(Text(""))
-    
-    return result["command"] or ""
-
-def interruptible_exploration(provider, goal: str, failed_command: str, error_output: str, cwd: str, os_name: str) -> Optional[str]:
-    result: dict[str, Any] = {"command": None, "error": None}
-    def target():
-        try:
-            result["command"] = provider.suggest_exploration_command(goal, failed_command, error_output, cwd, os_name)
-        except Exception as e:
-            result["error"] = str(e)
-
-    thread = threading.Thread(target=target)
-    thread.daemon = True
-    thread.start()
-
-    with Live(Text("Analyzing error...", style="cyan"), refresh_per_second=10) as live:
-        while thread.is_alive():
-            if is_esc_pressed():
-                live.update(Text("Cancelled.", style="red"))
-                raise GoBackException()
-            time.sleep(0.02)
-        
-        if result["error"]:
-            live.update(Text(""))
-            return None
-        
-        live.update(Text(""))
-    
-    return result["command"]
-
 def get_command(provider, user_input: str, cwd: str) -> str:
     cwd_posix = to_posix_path(cwd)
     os_name = get_os_info()
     history_context = format_history()
     project_context = get_context_for_prompt(cwd, user_input)
     try:
-        return interruptible_generate(provider, user_input, cwd_posix, history_context, os_name, project_context)
+        return llm_wrapper.interruptible_generate(provider, user_input, cwd_posix, history_context, os_name, project_context)
     except GoBackException:
         raise
     except Exception as e:
@@ -148,7 +41,7 @@ def get_answer(provider, user_input: str, cwd: str) -> str:
     os_name = get_os_info()
     history_context = format_history()
     try:
-        answer = interruptible_answer(provider, user_input, cwd_posix, history_context, os_name)
+        answer = llm_wrapper.interruptible_answer(provider, user_input, cwd_posix, history_context, os_name)
         add_chat_to_history(user_input, answer)
         return answer
     except GoBackException:
@@ -156,7 +49,14 @@ def get_answer(provider, user_input: str, cwd: str) -> str:
     except Exception as e:
         return f"AI Error: {e}"
 
-def execute_with_streaming(command: str) -> ExecutionResult:
+def execute_with_streaming(command: str, timeout: int = 0) -> ExecutionResult:
+    if timeout == 0:
+        timeout_str = os.getenv("COMMAND_TIMEOUT", "120")
+        try:
+            timeout = int(timeout_str)
+        except (ValueError, TypeError):
+            timeout = 120
+
     bash_path = get_bash_path()
     is_windows = platform.system() == "Windows"
 
@@ -185,6 +85,7 @@ def execute_with_streaming(command: str) -> ExecutionResult:
 
     output_full: List[str] = []
     was_interrupted = False
+    timed_out = False
     
     def sigint_handler(sig, frame):
         nonlocal was_interrupted
@@ -192,16 +93,45 @@ def execute_with_streaming(command: str) -> ExecutionResult:
     
     old_handler = signal.signal(signal.SIGINT, sigint_handler)
     
+    # Timeout setup: SIGALRM on Unix, threading.Timer on Windows
+    timeout_timer = None
+    old_alarm_handler = None
+    
+    if timeout > 0:
+        if is_windows:
+            def _on_timeout():
+                nonlocal timed_out
+                timed_out = True
+                kill_process_tree(process.pid)
+            timeout_timer = threading.Timer(timeout, _on_timeout)
+            timeout_timer.start()
+        else:
+            def _alarm_handler(signum, frame):
+                nonlocal timed_out
+                timed_out = True
+            old_alarm_handler = signal.signal(signal.SIGALRM, _alarm_handler)
+            signal.alarm(timeout)
+    
     def stream_reader(pipe, is_stderr=False):
         import sys
-        for line in iter(pipe.readline, ''):
+        try:
+            for line in iter(pipe.readline, ''):
+                if is_stderr:
+                    sys.stderr.write(line)
+                    sys.stderr.flush()
+                else:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                output_full.append(line)
+        except UnicodeDecodeError:
+            msg = '[binary output omitted]\n'
             if is_stderr:
-                sys.stderr.write(line)
+                sys.stderr.write(msg)
                 sys.stderr.flush()
             else:
-                sys.stdout.write(line)
+                sys.stdout.write(msg)
                 sys.stdout.flush()
-            output_full.append(line)
+            output_full.append(msg)
 
     t1 = threading.Thread(target=stream_reader, args=(process.stdout, False))
     t2 = threading.Thread(target=stream_reader, args=(process.stderr, True))
@@ -212,15 +142,49 @@ def execute_with_streaming(command: str) -> ExecutionResult:
 
     try:
         while process.poll() is None:
-            if was_interrupted or is_esc_pressed():
+            if timed_out:
+                console.print(f"\n[red]Command timed out after {timeout}s. Killing process...[/red]")
+                kill_process_tree(process.pid)
+                try:
+                    process.terminate()
+                except ProcessLookupError:
+                    pass
+                was_interrupted = True
+                break
+            if was_interrupted or llm_wrapper._cancel_requested or is_cancel_pressed():
                 console.print("\n[red][CTRL+C] Stopping process...[/red]")
                 kill_process_tree(process.pid)
-                process.terminate()
+                try:
+                    process.terminate()
+                except ProcessLookupError:
+                    pass
                 was_interrupted = True
                 break
             time.sleep(0.02)
     finally:
         signal.signal(signal.SIGINT, old_handler)
+        if timeout > 0:
+            if is_windows and timeout_timer:
+                timeout_timer.cancel()
+            else:
+                signal.alarm(0)
+                if old_alarm_handler is not None:
+                    signal.signal(signal.SIGALRM, old_alarm_handler)
+        # Reap zombie process
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        # Close file descriptors
+        try:
+            process.stdout.close()
+        except Exception:
+            pass
+        try:
+            process.stderr.close()
+        except Exception:
+            pass
 
     t1.join(timeout=1)
     t2.join(timeout=1)
@@ -229,6 +193,9 @@ def execute_with_streaming(command: str) -> ExecutionResult:
     exit_code = process.returncode if process.returncode is not None else -1
     
     add_to_history(command, output)
+    
+    if timed_out:
+        return ExecutionResult(exit_code=-1, output=f"Command timed out after {timeout}s", interrupted=True)
     
     return ExecutionResult(exit_code=exit_code, output=output, interrupted=was_interrupted)
 
@@ -252,7 +219,38 @@ def _format_chain_breakdown(chain_results: List[Tuple[str, CommandRisk]]) -> str
     
     return "\n".join(lines)
 
-def execute_command_with_safety(command: str) -> bool:
+def _handle_cd(command: str) -> Optional[ExecutionResult]:
+    """Handle cd commands specially. Returns ExecutionResult if handled, None otherwise."""
+    try:
+        parts = shlex.split(command)
+    except Exception:
+        parts = command.strip().split()
+
+    if parts and parts[0] == "cd":
+        shell_operators = ['&&', '||', ';', '|', '>', '<', '`', '$', '(', ')']
+        has_operator = any(op in command for op in shell_operators)
+
+        if len(parts) <= 2 and not has_operator:
+            path = "~"
+            if len(parts) > 1:
+                path = parts[1]
+
+            path = from_posix_path(path)
+            try:
+                os.chdir(path)
+                return ExecutionResult(exit_code=0, output=f"Changed directory to {path}", interrupted=False)
+            except Exception as e:
+                error_msg = f"cd: {e}"
+                console.print(f"[red]{error_msg}[/red]")
+                return ExecutionResult(exit_code=1, output=error_msg, interrupted=False)
+
+    return None
+
+def execute_command(command: str, *, auto_approve_caution: bool = False, trust_level=None) -> ExecutionResult:
+    """Classify, confirm if needed, and execute a command. Returns ExecutionResult."""
+    if trust_level is None:
+        trust_level = TrustLevel.CAUTIOUS
+
     risk = CommandSafety.classify(command)
     description = CommandSafety.get_risk_description(risk)
     chain_results = CommandSafety.classify_chain(command)
@@ -267,192 +265,39 @@ def execute_command_with_safety(command: str) -> bool:
             title="[bold red]DANGER[/bold red]",
             border_style="red"
         ))
-        return False
+        return ExecutionResult(exit_code=-1, output="BLOCKED: Command is classified as DANGER", interrupted=False)
 
     if risk == CommandRisk.CAUTION:
+        action = get_confirmation_policy(trust_level, CommandRisk.CAUTION)
         content = f"[bold yellow]WARNING:[/bold yellow] {description}\n[dim]Command: {command}[/dim]"
         if chain_breakdown:
             content += f"\n\n[bold]Command breakdown:[/bold]\n{chain_breakdown}"
-        console.print(Panel(
-            Text.from_markup(content),
-            title="[bold yellow]CAUTION[/bold yellow]",
-            border_style="yellow"
-        ))
-        confirm = safe_input("\033[33mExecute? [y/N]\033[0m ")
-        if confirm.lower() != 'y':
-            return False
+
+        if action == ConfirmationAction.REQUIRE_CONFIRMATION:
+            console.print(Panel(
+                Text.from_markup(content),
+                title="[bold yellow]CAUTION[/bold yellow]",
+                border_style="yellow"
+            ))
+            confirm = safe_input("\033[33mExecute? [y/N]\033[0m ")
+            if confirm.lower() != 'y':
+                return ExecutionResult(exit_code=-1, output="Cancelled", interrupted=False)
+        elif action == ConfirmationAction.AUTO_EXECUTE_WITH_NOTICE:
+            console.print(f"[dim]Auto-executing (trust: {trust_level.value})[/dim]")
+        elif action == ConfirmationAction.AUTO_EXECUTE_SILENT:
+            pass  # execute without any extra output
 
     if risk == CommandRisk.SAFE:
         console.print(f"[cyan][SAFE] {description}[/cyan]")
 
-    try:
-        parts = shlex.split(command)
-    except:
-        parts = command.strip().split()
-
-    if parts and parts[0] == "cd":
-        shell_operators = ['&&', '||', ';', '|', '>', '<', '`', '$', '(', ')']
-        has_operator = any(op in command for op in shell_operators)
-        
-        if len(parts) <= 2 and not has_operator:
-            path = "~"
-            if len(parts) > 1:
-                path = parts[1]
-            
-            path = from_posix_path(path)
-            try:
-                os.chdir(path)
-            except Exception as e:
-                console.print(f"[red]cd: {e}[/red]")
-            return True
-
-
-    try:
-        result = execute_with_streaming(command)
-        if result.interrupted:
-            raise GoBackException()
-        return True
-    except GoBackException:
-        raise
-    except Exception as e:
-        console.print(f"[bold red]Execution Error:[/bold red] {e}")
-        return False
-
-def execute_for_agent(command: str) -> Optional[ExecutionResult]:
-    """Execute command and return full result for agentic processing."""
-    risk = CommandSafety.classify(command)
-    
-    if risk == CommandRisk.DANGER:
-        console.print(f"[red][BLOCKED] Dangerous command: {command}[/red]")
-        return ExecutionResult(exit_code=-1, output="BLOCKED: Dangerous command", interrupted=False)
-
-    if risk == CommandRisk.CAUTION:
-        require_confirmation = get_agent_require_confirmation()
-        
-        if require_confirmation:
-            console.print(Panel(
-                Text.from_markup(f"[bold yellow]CAUTION:[/bold yellow] {CommandSafety.get_risk_description(risk)}\n[dim]Command: {command}[/dim]"),
-                title="[bold yellow]Agent Mode - Confirmation Required[/bold yellow]",
-                border_style="yellow"
-            ))
-            confirm = safe_input("\033[33mAllow agent to execute? [y/N]\033[0m ")
-            if confirm.lower() != 'y':
-                console.print("[yellow]User rejected command in agent mode[/yellow]")
-                return ExecutionResult(exit_code=-1, output="USER_REJECTED: User declined to execute CAUTION command", interrupted=False)
-            console.print(f"[yellow][USER-APPROVED for agent] {command}[/yellow]")
-        else:
-            console.print(f"[yellow][AUTO-APPROVED for agent] {command}[/yellow]")
-
-    if risk == CommandRisk.SAFE:
-        console.print(f"[cyan][SAFE] {command}[/cyan]")
-
-    try:
-        parts = shlex.split(command)
-    except:
-        parts = command.strip().split()
-
-    if parts and parts[0] == "cd":
-        shell_operators = ['&&', '||', ';', '|', '>', '<', '`', '$', '(', ')']
-        has_operator = any(op in command for op in shell_operators)
-        
-        if len(parts) <= 2 and not has_operator:
-            path = "~"
-            if len(parts) > 1:
-                path = parts[1]
-            
-            path = from_posix_path(path)
-            try:
-                os.chdir(path)
-                return ExecutionResult(exit_code=0, output=f"Changed directory to {path}", interrupted=False)
-            except Exception as e:
-                return ExecutionResult(exit_code=1, output=f"cd: {e}", interrupted=False)
+    cd_result = _handle_cd(command)
+    if cd_result is not None:
+        return cd_result
 
     try:
         return execute_with_streaming(command)
     except Exception as e:
+        console.print(f"[bold red]Execution Error:[/bold red] {e}")
         return ExecutionResult(exit_code=-1, output=str(e), interrupted=False)
 
-MAX_AGENT_ITERATIONS = 3
 
-def run_agentic_loop(provider, goal: str, cwd: str) -> bool:
-    cwd_posix = to_posix_path(cwd)
-    os_name = get_os_info()
-    history_context = format_history()
-    project_context = get_context_for_prompt(cwd, goal)
-    last_command: str = ""
-    last_output: str = ""
-    exploration_output: str = ""
-    
-    console.print(Panel(
-        f"[bold cyan]Goal:[/bold cyan] {goal}\n[dim]Max attempts: {MAX_AGENT_ITERATIONS}[/dim]",
-        title="[bold cyan]Agent Mode[/bold cyan]",
-        border_style="cyan"
-    ))
-    
-    if project_context:
-        console.print(f"[dim]Detected project context[/dim]")
-    
-    for attempt in range(1, MAX_AGENT_ITERATIONS + 1):
-        console.print(f"\n[bold cyan]Attempt {attempt}/{MAX_AGENT_ITERATIONS}[/bold cyan]")
-        
-        if attempt == 1:
-            command = interruptible_generate(provider, goal, cwd_posix, history_context, os_name, project_context)
-        else:
-            explore_cmd = interruptible_exploration(provider, goal, last_command, last_output, cwd_posix, os_name)
-            
-            if explore_cmd:
-                console.print(f"[dim]Exploring:[/dim] {explore_cmd}")
-                explore_result = execute_for_agent(explore_cmd)
-                if explore_result and not explore_result.interrupted:
-                    exploration_output = explore_result.output
-                    console.print(f"[dim]Got {len(exploration_output)} chars of context[/dim]")
-            
-            command = interruptible_fix_command(
-                provider,
-                goal,
-                last_command,
-                last_output,
-                cwd_posix,
-                history_context,
-                os_name,
-                project_context,
-                exploration_output
-            )
-            exploration_output = ""
-        
-        console.print(f"[yellow]Command:[/yellow] {command}")
-        
-        result = execute_for_agent(command)
-        if result is None:
-            console.print("[red]Execution returned no result[/red]")
-            last_command = command
-            last_output = "No execution result"
-            continue
-            
-        if result.interrupted:
-            console.print("[yellow]Interrupted by user[/yellow]")
-            return False
-        
-        success, explanation = provider.check_goal_achieved(goal, command, result.output, result.exit_code, os_name)
-        
-        if success and result.exit_code == 0:
-            console.print(Panel(
-                f"[bold green]Goal achieved![/bold green]\n{explanation}",
-                title="[bold green]Success[/bold green]",
-                border_style="green"
-            ))
-            return True
-        
-        last_command = command
-        last_output = result.output
-        console.print(f"[red]Failed:[/red] {explanation}")
-        
-        if attempt < MAX_AGENT_ITERATIONS:
-            history_context = format_history()
-    
-    console.print(Panel(
-        f"[bold red]Goal not achieved after {MAX_AGENT_ITERATIONS} attempts[/bold red]\n[dim]Last output: {last_output[-500:] if len(last_output) > 500 else last_output}[/dim]",
-        title="[bold red]Agent Failed[/bold red]",
-        border_style="red"
-    ))
-    return False

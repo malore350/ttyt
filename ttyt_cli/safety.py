@@ -22,12 +22,11 @@ class CommandSafety:
     SAFE_COMMANDS = {
         # Unix/Bash commands (read-only)
         "ls", "cat", "pwd", "whoami", "hostname", "date", "uptime",
-        "grep", "egrep", "fgrep", "find", "locate", "which", "whereis",
+        "grep", "egrep", "fgrep", "locate", "which", "whereis",
         "head", "tail", "less", "more", "wc", "sort", "uniq", "du", "df",
         "ps", "top", "free", "id", "groups", "env", "printenv",
         "git",
-        "python", "python3", "node", "java", "go", "rustc", "ruby", "perl",
-        "awk", "sed", "bc", "expr",
+        "java", "rustc", "bc", "expr",
         "cd", "dir", "type",
         "diff", "basename", "dirname", "realpath", "file", "stat",
         "md5sum", "sha1sum", "sha256sum", "base64", "strings",
@@ -48,13 +47,28 @@ class CommandSafety:
     # Danger commands - destructive operations
     DANGER_COMMANDS = {
         # Unix destructive
-        "rm -rf /", "rm -rf *", "mkfs", "dd", "shred", "wipe",
+        "rm -rf /", "rm -rf *", "rm -rf ~", "rm -rf $HOME", "rm -rf /*",
+        "rm -rf .", "rm -rf / ", "rm -rf /home", "rm -rf /var",
+        "rm -rf /etc", "rm -rf /tmp/", "rm -rf --no-preserve-root",
+        "rm -r ~", "rm -r $HOME", "rm -r /*", "rm -r .", "rm -r /",
+        "mkfs", "dd", "shred", "wipe",
         "chmod -R 777 /", "chown -R",
         # Process termination
         "kill -9", "pkill -9", "killall -9",
         # System-destructive (if running with sudo/privilege)
         "format", "fdisk", "parted", "del", "rmdir",
+        # Dangerous wrappers
+        "eval", "exec rm", "exec sh", "exec bash", "exec zsh",
+        "source", "pwsh",
     }
+
+    # Danger regex patterns for variable-path destructive commands
+    DANGER_REGEX = [
+        r'^rm\s+-r[fv]?\s+~',
+        r'^rm\s+-r[fv]?\s+\$home',
+        r'^rm\s+-r[fv]?\s+/',
+        r'^rm\s+-r[fv]?\s+\.',
+    ]
 
     # Caution patterns - commands requiring confirmation (excluding chain operators, handled separately)
     CAUTION_PATTERNS = [
@@ -68,10 +82,16 @@ class CommandSafety:
         r'powershell',
         r'cmd',
         r'msys_no_pathconv',
+        r'^pwsh\b',
+        r'^\bsource\s+',
+        r'^\.\s+',
+        r'^doas\b',
+        r'^pkexec\b',
+        r'^run0\b',
     ]
     
     # Chain operators that require splitting and individual analysis
-    CHAIN_OPERATORS = ['&&', '||', ';']
+    CHAIN_OPERATORS = ['&&', '||', ';', '\n']
 
     # Package managers
     PACKAGE_MANAGERS = {
@@ -140,11 +160,23 @@ class CommandSafety:
 
         cmd_lower = command.strip().lower()
 
+        # Fix 7: Backslash-escaped commands — strip leading backslash and re-classify
+        if cmd_lower.startswith("\\"):
+            return cls._classify_single(command.strip()[1:])
+
         if cmd_lower.startswith("winpty "):
             return cls._classify_single(command.strip()[7:])
 
         if cmd_lower.startswith("msys_no_pathconv=1 "):
             return cls._classify_single(command.strip()[19:])
+
+        # Privilege escalation prefix stripping
+        if cmd_lower.startswith("doas "):
+            return cls._classify_single(command.strip()[5:])
+        if cmd_lower.startswith("pkexec "):
+            return cls._classify_single(command.strip()[7:])
+        if cmd_lower.startswith("run0 "):
+            return cls._classify_single(command.strip()[5:])
 
         if cmd_lower.startswith("taskkill"):
             if "/im" in cmd_lower or "//im" in cmd_lower:
@@ -154,26 +186,97 @@ class CommandSafety:
             else:
                 return CommandRisk.DANGER
 
+        # Fix 6: Brace expansion detection
+        stripped = command.strip()
+        if stripped.startswith('{') and '}' in stripped and ',' in stripped:
+            close_idx = stripped.find('}')
+            if close_idx > 0 and close_idx <= 20 and ',' in stripped[1:close_idx]:
+                return CommandRisk.DANGER
+
+        # Fix 4: DANGER regex patterns for variable-path rm commands
+        for pattern in cls.DANGER_REGEX:
+            if re.search(pattern, cmd_lower):
+                return CommandRisk.DANGER
+
         for danger_cmd in cls.DANGER_COMMANDS:
-            if cmd_lower.startswith(danger_cmd + " ") or cmd_lower == danger_cmd:
+            danger_lower = danger_cmd.lower()
+            if cmd_lower.startswith(danger_lower + " ") or cmd_lower == danger_lower:
                 return CommandRisk.DANGER
 
         for pattern in cls.CAUTION_PATTERNS:
             if re.search(pattern, command):
                 return CommandRisk.CAUTION
 
+        # Fix 3: Argument-aware classification for interpreters
+        tokens = cmd_lower.split()
+        if tokens:
+            first = tokens[0]
+
+            if first in ("python", "python3"):
+                if len(tokens) > 1:
+                    if tokens[1] == "-c":
+                        return CommandRisk.CAUTION
+                    if tokens[1] == "-m":
+                        return CommandRisk.CAUTION
+                    if tokens[1].endswith(".py"):
+                        return CommandRisk.SAFE
+                return CommandRisk.CAUTION
+
+            if first == "node":
+                if len(tokens) > 1 and tokens[1] == "-e":
+                    return CommandRisk.CAUTION
+                return CommandRisk.SAFE
+
+            if first == "ruby":
+                if len(tokens) > 1 and tokens[1] == "-e":
+                    return CommandRisk.CAUTION
+                return CommandRisk.SAFE
+
+            if first == "perl":
+                if len(tokens) > 1 and tokens[1] == "-e":
+                    return CommandRisk.CAUTION
+                return CommandRisk.SAFE
+
+            if first == "go":
+                if len(tokens) > 1 and tokens[1] == "run":
+                    return CommandRisk.CAUTION
+                return CommandRisk.SAFE
+
+            if first == "find":
+                if "-exec" in tokens or "-execdir" in tokens:
+                    return CommandRisk.CAUTION
+                return CommandRisk.SAFE
+
+            if first == "awk":
+                if "system(" in cmd_lower:
+                    return CommandRisk.CAUTION
+                return CommandRisk.SAFE
+
+            if first == "sed":
+                if "-i" in tokens:
+                    return CommandRisk.CAUTION
+                return CommandRisk.SAFE
+
         if '|' in command:
             parts = command.split('|')
             all_safe = True
-            for part in parts:
+            for idx, part in enumerate(parts):
                 part = part.strip()
                 if not part:
                     all_safe = False
                     break
-                
+
                 part_lower = part.lower()
+
+                # Fix 8: Pipe-to-shell detection — any segment after the first that is a shell interpreter
+                if idx > 0:
+                    shell_interps = ("bash", "sh", "zsh", "fish", "python", "python3", "perl", "ruby", "node")
+                    for interp in shell_interps:
+                        if part_lower.startswith(interp + " ") or part_lower == interp:
+                            return CommandRisk.DANGER
+
                 part_is_safe = False
-                
+
                 for safe_cmd in cls.SAFE_COMMANDS:
                     if part_lower.startswith(safe_cmd + " ") or part_lower == safe_cmd:
                         if safe_cmd == "git":
@@ -183,17 +286,17 @@ class CommandSafety:
                         else:
                             part_is_safe = True
                         break
-                
+
                 if not part_is_safe:
                     for safe_git in cls.SAFE_GIT_COMMANDS:
                         if part_lower.startswith(safe_git):
                             part_is_safe = True
                             break
-                
+
                 if not part_is_safe:
                     all_safe = False
                     break
-            
+
             if all_safe:
                 return CommandRisk.SAFE
             return CommandRisk.CAUTION

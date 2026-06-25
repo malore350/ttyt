@@ -3,3 +3,15 @@ __pycache__
 build/
 ttyt.egg-info/
 .omo
+.DS_Store
+AGENTS.md
+dist/
+venv/
+.venv/
+env/
+.vscode/
+.idea/
+.coverage
+coverage/
+htmlcov/
+.pytest_cache/

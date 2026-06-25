@@ -2,6 +2,7 @@ import sys
 import os
 import re
 import platform
+import shutil
 import signal
 from typing import Optional
 from prompt_toolkit import prompt
@@ -15,16 +16,35 @@ try:
 except ImportError:
     msvcrt = None
 
+try:
+    import select
+    import termios
+    import tty
+except ImportError:
+    select = None
+    termios = None
+    tty = None
+
 class GoBackException(Exception):
     pass
 
 def get_os_info() -> str:
     system = platform.system()
     if system == "Windows":
+        if os.environ.get("PSVersionTable"):
+            return "Windows (PowerShell)"
+        if shutil.which("powershell") or shutil.which("pwsh"):
+            return "Windows (PowerShell)"
         return "Windows (Git Bash)"
     elif system == "Darwin":
         return "macOS"
     elif system == "Linux":
+        try:
+            with open('/proc/sys/kernel/osrelease', 'r') as f:
+                if 'microsoft' in f.read().lower():
+                    return "WSL (Linux)"
+        except (IOError, FileNotFoundError):
+            pass
         return "Linux"
     return system
 
@@ -65,6 +85,10 @@ def from_posix_path(path: str) -> str:
 def get_bash_path() -> str:
     if platform.system() != "Windows":
         return "bash"
+
+    bash_in_path = shutil.which("bash")
+    if bash_in_path:
+        return bash_in_path
         
     paths = [
         r"C:\Program Files\Git\bin\bash.exe",
@@ -87,6 +111,10 @@ def kill_process_tree(pid: int):
         try:
             os.killpg(os.getpgid(pid), signal.SIGTERM)
         except ProcessLookupError:
+            pass
+        try:
+            os.waitpid(-os.getpgid(pid), os.WNOHANG)
+        except (ChildProcessError, OSError):
             pass
 
 def clear_screen():
@@ -140,12 +168,33 @@ def safe_input(text: str) -> str:
     except EOFError:
         raise KeyboardInterrupt()
 
-def is_esc_pressed():
-    if not msvcrt:
+def is_cancel_pressed() -> bool:
+    """Non-blocking check for ESC key press. Cross-platform: msvcrt on Windows, select+termios on Unix."""
+    if msvcrt is not None:
+        if msvcrt.kbhit():
+            if msvcrt.getch() == b'\x1b':
+                return True
         return False
-    if msvcrt.kbhit():
-        if msvcrt.getch() == b'\x1b':
-            return True
+
+    if select is not None and termios is not None and tty is not None:
+        if not sys.stdin.isatty():
+            return False
+        try:
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            tty.setraw(fd)
+            try:
+                ready, _, _ = select.select([sys.stdin], [], [], 0.02)
+                if ready:
+                    ch = sys.stdin.read(1)
+                    if ch == '\x1b':
+                        return True
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        except (termios.error, OSError, ValueError):
+            pass
+        return False
+
     return False
 
 def show_help():
@@ -160,6 +209,9 @@ def show_help():
         '<style color="#89b4fa">/agent</style>     Agentic mode - retry until goal achieved\n'
         '<style color="#89b4fa">/help</style>      Show this help\n'
         '<style color="#89b4fa">/cmd</style>       Run command directly\n'
+        '<style color="#89b4fa">/clear</style>     Clear the screen\n'
+        '<style color="#89b4fa">/exit</style>      Exit ttyt\n'
+        '<style color="#89b4fa">/status</style>    Show current status\n'
         '\n'
         '<bold>Command Safety</bold>\n'
         '<style color="green">[SAFE]</style>    Read-only commands auto-execute\n'
@@ -177,16 +229,50 @@ def show_help():
 def is_natural_language(text: str) -> bool:
     if text.startswith("/"):
         return False
-    shell_commands = ["ls", "cd", "clear", "exit", "pwd", "cp", "rm", "mv", 
-                      "mkdir", "rmdir", "cat", "echo", "export", "grep", "find", 
+
+    shell_commands = ["ls", "cd", "clear", "exit", "pwd", "cp", "rm", "mv",
+                      "mkdir", "rmdir", "cat", "echo", "export", "grep", "find",
                       "ssh", "scp", "git", "npm", "node", "python", "pip"]
-    
-    shell_starters = ["cd ", "ls ", "echo ", "cat ", "cp ", "rm ", "mv ", "mkdir ", 
-                      "rmdir ", "git ", "npm ", "node ", "npx ", "python ", "pip ", 
+
+    shell_starters = ["cd ", "ls ", "echo ", "cat ", "cp ", "rm ", "mv ", "mkdir ",
+                      "rmdir ", "git ", "npm ", "node ", "npx ", "python ", "pip ",
                       "ssh ", "./", "../", "/", "export ", "grep "]
-    
-    text_lower = text.lower()
+
+    nl_words = {
+        "my", "the", "our", "some", "any", "all", "this", "that", "these", "those",
+        "a", "an", "me", "you", "him", "her", "us", "them", "it",
+        "to", "for", "with", "in", "on", "at", "by", "from", "of", "about",
+        "into", "through", "during", "before", "after", "above", "below", "between", "under",
+        "again", "further", "then", "once", "here", "there",
+        "when", "where", "why", "how", "which", "who", "what", "whose", "whom",
+    }
+
+    text_lower = text.lower().strip()
+
     if text_lower in shell_commands:
         return False
-    return not any(text_lower.startswith(s.lower()) for s in shell_starters)
+
+    matched_starter = None
+    for starter in shell_starters:
+        if text_lower.startswith(starter.lower()):
+            matched_starter = starter
+            break
+
+    if matched_starter is None:
+        return True
+
+    rest = text_lower[len(matched_starter):].strip()
+
+    rest_words = set(rest.split())
+    if rest_words & nl_words:
+        return True
+
+    if re.search(r'(^|\s)-[a-zA-Z0-9-]', rest):
+        return False
+    if re.search(r'(^|\s)[/~.]', rest):
+        return False
+    if re.search(r'\.\w{1,5}(\s|$)', rest):
+        return False
+
+    return False
 
